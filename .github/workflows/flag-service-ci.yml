@@ -7,12 +7,12 @@ on:
   push:
     branches: [main]
     paths:
-      - "docker/services/flag-service-main"
+      - "docker/services/flag-service-main/**"
       - ".github/workflows/flag-service-ci.yml"
   pull_request:
     branches: [main]
     paths:
-      - "docker/services/flag-service-main"
+      - "docker/services/flag-service-main/**"
       - ".github/workflows/flag-service-ci.yml"
   workflow_dispatch:
 

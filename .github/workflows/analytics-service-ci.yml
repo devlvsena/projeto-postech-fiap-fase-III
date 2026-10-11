@@ -7,12 +7,12 @@ on:
   push:
     branches: [main]
     paths:
-      - "docker/services/analytics-service-main"
+      - "docker/services/analytics-service-main/**"
       - ".github/workflows/analytics-service-ci.yml"
   pull_request:
     branches: [main]
     paths:
-      - "docker/services/analytics-service-main"
+      - "docker/services/analytics-service-main/**"
       - ".github/workflows/analytics-service-ci.yml"
   workflow_dispatch:
 
