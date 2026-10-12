@@ -363,7 +363,7 @@ indent-string='    '
 # Maximum number of characters on a single line. Pylint's default of 100 is
 # based on PEP 8's guidance that teams may choose line lengths up to 99
 # characters.
-max-line-length=100
+max-line-length=120
 
 # Maximum number of lines in a module.
 max-module-lines=1000
@@ -459,16 +459,16 @@ disable=raw-checker-failed,
         deprecated-pragma,
         use-symbolic-message-instead,
         use-implicit-booleaness-not-comparison-to-string,
-        use-implicit-booleaness-not-comparison-to-zero
+        use-implicit-booleaness-not-comparison-to-zero,
         
-				# Desativa checagens puras de estilo/PEP8 (deixadas para o Flake8)
-				line-too-long,          # C0301: tamanho de linha
-				trailing-whitespace,    # C0303: espaços no final da linha
-				missing-final-newline,  # C0304: falta de linha em branco no final do arquivo
-				invalid-name,           # C0103: convenções de nomes de variáveis/funções (opcional)
-				missing-module-docstring,
-				missing-class-docstring,
-				missing-function-docstring
+        # Desativa checagens puras de estilo/PEP8 (deixadas para o Flake8)
+        line-too-long,          # C0301: tamanho de linha
+        trailing-whitespace,    # C0303: espaços no final da linha
+        missing-final-newline,  # C0304: falta de linha em branco no final do arquivo
+        invalid-name,           # C0103: convenções de nomes de variáveis/funções (opcional)
+        missing-module-docstring,
+        missing-class-docstring,
+        missing-function-docstring
 
 # Enable the message, report, category or checker with the given id(s). You can
 # either give multiple identifier separated by comma (,) or put this option
