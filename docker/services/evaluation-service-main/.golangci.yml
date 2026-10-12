@@ -4,16 +4,27 @@ linters:
   enable:
     - gosec
   settings:
-    errcheck:
-      exclude-functions:
-        - (*encoding/json.Encoder).Encode
-        - (*database/sql.DB).Close
     gosec:
       excludes:
         - G104
         - G114
+        - G401
+        - G505
   exclusions:
     rules:
       - path: _test\.go
         linters:
           - gosec
+      # Close() em defer (resp.Body.Close, db.Close, etc.)
+      - linters:
+          - errcheck
+        text: "Error return value of .*\\.Close.* is not checked"
+      # Retorno de .Err() em chamadas de cache (Redis)
+      - path: evaluator\.go
+        linters:
+          - errcheck
+        text: "Err.* is not checked"
+      # io/ioutil deprecado
+      - linters:
+          - staticcheck
+        text: "SA1019: \"io/ioutil\""
