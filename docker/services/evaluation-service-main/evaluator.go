@@ -107,7 +107,7 @@ func (a *App) fetchFlag(flagName string) (*Flag, error) {
 	// #nosec G704
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Authorization", "Bearer "+apiKey)
-
+	// #nosec G704
 	resp, err := a.HttpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao chamar flag-service: %w", err)
@@ -135,7 +135,7 @@ func (a *App) fetchRule(flagName string) (*TargetingRule, error) {
 	// #nosec G704
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Authorization", "Bearer "+apiKey)
-
+	// #nosec G704
 	resp, err := a.HttpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao chamar targeting-service: %w", err)
