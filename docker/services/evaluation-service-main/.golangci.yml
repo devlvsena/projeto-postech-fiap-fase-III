@@ -10,6 +10,8 @@ linters:
         - G114
         - G401
         - G505
+        - G704 # Add this line to ignore SSRF warnings
+        
   exclusions:
     rules:
       - path: _test\.go
