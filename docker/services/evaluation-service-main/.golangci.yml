@@ -10,7 +10,6 @@ linters:
         - G114
         - G401
         - G505
-        - G704 # Add this line to ignore SSRF warnings
         
   exclusions:
     rules:
@@ -30,6 +29,10 @@ linters:
       - linters:
           - errcheck
         text: "Error return value of .*\\.Encode.* is not checked"
+      # Ignorar G704 (SSRF)
+      - linters:
+          - gosec
+        text: "G704"
       # io/ioutil deprecado
       - linters:
           - staticcheck
