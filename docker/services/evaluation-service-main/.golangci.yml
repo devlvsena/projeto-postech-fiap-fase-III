@@ -1,0 +1,19 @@
+version: "2"
+
+linters:
+  enable:
+    - gosec
+  settings:
+    errcheck:
+      exclude-functions:
+        - (*encoding/json.Encoder).Encode
+        - (*database/sql.DB).Close
+    gosec:
+      excludes:
+        - G104
+        - G114
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
