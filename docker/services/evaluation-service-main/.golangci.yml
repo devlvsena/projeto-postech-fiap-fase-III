@@ -29,10 +29,10 @@ linters:
       - linters:
           - errcheck
         text: "Error return value of .*\\.Encode.* is not checked"
-      # Ignorar G704 (SSRF)
+      # Ignorar G704 (SSRF) globalmente
       - linters:
           - gosec
-        text: "G704"
+        text: "G704.*SSRF"
       # io/ioutil deprecado
       - linters:
           - staticcheck
