@@ -1,0 +1,14 @@
+version: "2"
+
+linters:
+  enable:
+    - gosec
+  settings:
+    gosec:
+      excludes:
+        - G104
+  exclusions:
+    rules:
+      - path: _test\.go
+        linters:
+          - gosec
