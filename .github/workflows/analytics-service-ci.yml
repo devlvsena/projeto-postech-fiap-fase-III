@@ -7,18 +7,18 @@ on:
   push:
     branches: [main]
     paths:
-      - "docker/services/analytics-service-main/**"
+      - "toggle-master/microsservices/analytics-service-main/**"
       - ".github/workflows/analytics-service-ci.yml"
   pull_request:
     branches: [main]
     paths:
-      - "docker/services/analytics-service-main/**"
+      - "toggle-master/microsservices/analytics-service-main/**"
       - ".github/workflows/analytics-service-ci.yml"
   workflow_dispatch:
 
 env:
   PYTHON_VERSION: "3.9"
-  BUILD_CONTEXT: docker/services/analytics-service-main
+  BUILD_CONTEXT: toggle-master/microsservices/analytics-service-main
   AWS_REGION: us-east-1
   AWS_ECR_REPOSITORY: analytics-service
 
@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: docker/services/analytics-service-main
+        working-directory: toggle-master/microsservices/analytics-service-main
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v4
@@ -45,7 +45,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          cache-dependency-path: docker/services/analytics-service-main/requirements*.txt
+          cache-dependency-path: toggle-master/microsservices/analytics-service-main/requirements*.txt
       
       - name: 📦 Install dependences for lint
         run: |
@@ -71,11 +71,11 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-          cache-dependency-path: docker/services/analytics-service-main/requirements*.txt
+          cache-dependency-path: toggle-master/microsservices/analytics-service-main/requirements*.txt
       
       # ---------------- SCA ----------------
       - name: 🔒 SCA - pip-audit (informativo)
-        working-directory: docker/services/analytics-service-main
+        working-directory: toggle-master/microsservices/analytics-service-main
         continue-on-error: true
         run: |
           pip install pip-audit
@@ -85,7 +85,7 @@ jobs:
         uses:  aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
-          scan-ref: docker/services/analytics-service-main
+          scan-ref: toggle-master/microsservices/analytics-service-main
           scanners: vuln
           severity: CRITICAL
           ignore-unfixed: true
@@ -94,7 +94,7 @@ jobs:
 
       # ---------------- SAST ----------------
       - name: 🛑 SAST - Bandit (bloqueia em HIGH)
-        working-directory: docker/services/analytics-service-main
+        working-directory: toggle-master/microsservices/analytics-service-main
         run: |
           pip install bandit
           bandit -r . --severity-level high -x ./tests,./.venv
