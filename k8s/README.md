@@ -5,6 +5,7 @@ para evitar reescrever manifests inteiros a cada ambiente.
 
 ```
 k8s/
+  argocd/                   # Instalação do Argo CD via Helm no Minikube
   base/                     # Deployments/Services/ConfigMaps comuns a TODOS os ambientes
     auth-service/
     flag-service/
@@ -20,6 +21,9 @@ k8s/
 Nenhum arquivo em `base/` tem `namespace` ou segredo fixado — cada overlay decide o
 namespace, as credenciais e, no caso de produção, os endpoints da AWS.
 
+A instalação do Argo CD no cluster local está documentada em
+[argocd/README.md](argocd/README.md).
+
 ## Ambiente de desenvolvimento (Minikube)
 
 Compare com o fluxo antigo baseado em `kubectl apply -f k8s/development/<serviço>`:
@@ -27,11 +31,11 @@ agora um único comando aplica tudo.
 
 ```bash
 # 1. Construir as imagens dentro do Minikube (imagePullPolicy: Never)
-minikube image build -t projeto-postech-fiap-fase-ii-auth-service:latest ./docker/services/auth-service-main
-minikube image build -t projeto-postech-fiap-fase-ii-flag-service:latest ./docker/services/flag-service-main
-minikube image build -t projeto-postech-fiap-fase-ii-targeting-service:latest ./docker/services/targeting-service-main
-minikube image build -t projeto-postech-fiap-fase-ii-evaluation-service:latest ./docker/services/evaluation-service-main
-minikube image build -t projeto-postech-fiap-fase-ii-analytics-service:latest ./docker/services/analytics-service-main
+minikube image build -t projeto-postech-fiap-fase-ii-auth-service:latest ./toggle-master/microsservices/auth-service-main
+minikube image build -t projeto-postech-fiap-fase-ii-flag-service:latest ./toggle-master/microsservices/flag-service-main
+minikube image build -t projeto-postech-fiap-fase-ii-targeting-service:latest ./toggle-master/microsservices/targeting-service-main
+minikube image build -t projeto-postech-fiap-fase-ii-evaluation-service:latest ./toggle-master/microsservices/evaluation-service-main
+minikube image build -t projeto-postech-fiap-fase-ii-analytics-service:latest ./toggle-master/microsservices/analytics-service-main
 
 # 2. Aplicar todo o overlay de uma vez
 kubectl apply -k k8s/overlays/development
