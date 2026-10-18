@@ -68,7 +68,7 @@ patches:
       - op: add
         path: /metadata/annotations
         value:
-          gitops.example.com/test: feature-argocd-v1
+          gitops.example.com/test: feature-argocd-v2
 
 replicas:
   - name: analytics-service
