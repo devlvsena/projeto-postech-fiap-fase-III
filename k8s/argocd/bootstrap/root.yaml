@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+spec:
+  project: default
+
+  source:
+    repoURL: https://github.com/gabrielyuto/projeto-postech-fiap-fase-III.git
+    targetRevision: feature/argocd # PARA TESTE
+    path: k8s/argocd/managed
+    directory:
+      recurse: true
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+
+  syncPolicy:
+    automated:
+      selfHeal: true
+      prune: false
+    syncOptions:
+      - CreateNamespace=false
