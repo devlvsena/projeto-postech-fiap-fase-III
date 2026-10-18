@@ -60,15 +60,6 @@ patches:
         path: /spec/template/spec/containers/0/imagePullPolicy
         value: Never
   - path: patches/evaluation-service-nodeport.yaml
-  - target:
-      version: v1
-      kind: Service
-      name: evaluation-service
-    patch: |-
-      - op: add
-        path: /metadata/annotations
-        value:
-          gitops.example.com/test: feature-argocd-v2
 
 replicas:
   - name: analytics-service
