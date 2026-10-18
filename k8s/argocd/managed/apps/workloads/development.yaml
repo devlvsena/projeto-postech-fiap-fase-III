@@ -13,11 +13,14 @@ spec:
       jsonPointers:
         - /spec/replicas
   syncPolicy:
+    automated:
+      selfHeal: true
+      prune: false
     syncOptions:
       - RespectIgnoreDifferences=true
   source:
     repoURL: https://github.com/gabrielyuto/projeto-postech-fiap-fase-III.git
-    targetRevision: main          # branch, tag ou SHA que o Argo CD acompanha
+    targetRevision: feature/argocd # PARA TESTE         # branch, tag ou SHA que o Argo CD acompanha
     path: k8s/overlays/development
   destination:
     server: https://kubernetes.default.svc   # "este mesmo cluster"
