@@ -49,3 +49,7 @@ docker network ls | grep kind
 
 
 aws --endpoint-url=http://localhost:4566 s3 mb s3://toggle-master-tfstate-dev --region us-east-1
+
+
+kubectl port-forward svc/argocd-server -n argocd 8080:443
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d; echo
