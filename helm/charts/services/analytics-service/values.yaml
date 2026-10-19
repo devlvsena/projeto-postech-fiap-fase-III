@@ -1,0 +1,57 @@
+# ---- ConfigMap ----
+configMap:
+  name: analytics-service-config
+  data:
+    PORT: "8005"
+
+# ---- Secrets ----
+secrets:
+  name: analytics-service-secret
+  type: Opaque
+  data:
+    AWS_REGION: "us-east-1"
+    AWS_SQS_URL: "http://elasticmq:9324/000000000000/evaluation-queue"
+    AWS_DYNAMODB_TABLE: "dynamodb-table"
+
+# ---- Deployment ----
+deployment:
+  replicaCount: 2
+  image:
+    repository: "analytics-service"
+    tag: latest
+    pullPolicy: IfNotPresent
+  containerPort: 8005
+  resources:
+    requests:
+      cpu: 250m
+      memory: 128Mi
+    limits:
+      cpu: 750m
+      memory: 256Mi
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8005
+    initialDelaySeconds: 10
+    periodSeconds: 15
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8005
+    initialDelaySeconds: 5
+    timeoutSeconds: 10
+
+# ---- HPA ----
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 70
+
+# ---- Service ----
+service:
+  enabled: true
+  type: ClusterIP
+  port: 8005
+  targetPort: 8005

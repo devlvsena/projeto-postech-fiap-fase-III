@@ -1,0 +1,60 @@
+# ---- ConfigMap ----
+configMap:
+  name: evaluation-service-config
+  data:
+    PORT: "8004"
+    FLAG_SERVICE_URL: "http://flag-service:8002"
+    TARGETING_SERVICE_URL: "http://targeting-service:8003"
+
+# ---- Secrets ----
+secrets:
+  name: evaluation-service-secret
+  type: Opaque
+  data:
+    REDIS_URL: "redis://redis:6379"
+    AWS_REGION: us-east-1
+    AWS_SQS_URL: "http://elasticmq:9324/000000000000/evaluation-queue"
+    SERVICE_API_KEY: "tm_key_554de96a34eeff6c2a50d1e65"
+
+# ---- Deployment ----
+deployment:
+  replicaCount: 2
+  image:
+    repository: "evaluation-service"
+    tag: latest
+    pullPolicy: IfNotPresent
+  containerPort: 8004
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8004
+    initialDelaySeconds: 10
+    periodSeconds: 15
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8004
+    initialDelaySeconds: 5
+    timeoutSeconds: 10
+
+# ---- HPA ----
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 70
+
+# ---- Service ----
+service:
+  enabled: true
+  type: ClusterIP
+  port: 8004
+  targetPort: 8004

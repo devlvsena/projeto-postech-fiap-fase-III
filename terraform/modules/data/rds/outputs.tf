@@ -15,5 +15,5 @@ output "subnet_group_name" {
 }
 
 output "security_group_id" {
-  value = data.aws_security_group.this.id
+  value = aws_security_group.rds.id
 }
