@@ -53,4 +53,13 @@ run "platform_configuration" {
     )
     error_message = "Traefik deve publicar a classe traefik via NLB com rotas Prefix estritas."
   }
+
+  assert {
+    condition = (
+      helm_release.sealed_secrets.chart == "sealed-secrets" &&
+      helm_release.sealed_secrets.namespace == "kube-system" &&
+      yamldecode(helm_release.sealed_secrets.values[0]).fullnameOverride == "sealed-secrets-controller"
+    )
+    error_message = "Sealed Secrets deve rodar em kube-system com o nome padrao esperado pelo kubeseal."
+  }
 }

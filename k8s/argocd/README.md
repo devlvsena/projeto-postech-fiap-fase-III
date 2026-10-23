@@ -6,7 +6,7 @@ configuracao completa de alta disponibilidade para producao comercial.
 
 ```text
 Terraform -> VPC, EKS, RDS, Valkey, SQS, DynamoDB e ECR
-          -> Helm: Argo CD, metrics-server e Traefik
+          -> Helm: Argo CD, metrics-server, Traefik e Sealed Secrets
 Argo CD   -> k8s/overlays/production -> microsservicos
 Minikube  -> kubectl apply -k k8s/overlays/development (sem Argo CD)
 ```
@@ -57,14 +57,15 @@ sem verificar o state e a propriedade dos recursos.
 
 1. Publique as cinco imagens no ECR e atualize o overlay com tags imutaveis,
    conforme o [README do Kubernetes](../README.md).
-2. Preencha e aplique os seis Secrets a partir do modelo local ignorado pelo Git.
-   Use endpoints da conta atual e credenciais AWS temporarias validas.
-3. Rotacione valores que ja foram versionados. Remover arquivos nao remove
-   credenciais do historico do Git.
+2. Gere os seis SealedSecrets com o `kubeseal` usando o certificado do
+   controller deste cluster (ver [README do Kubernetes](../README.md)).
+3. Rotacione valores que ja foram versionados em texto puro. Remover arquivos
+   nao remove credenciais do historico do Git.
 4. Faca commit e push das alteracoes. A Application acompanha `feature/argocd`;
    depois do merge, ajuste `targetRevision` para a branch desejada.
 
-O Argo CD nao constroi imagens, nao provisiona bancos AWS nem gera Secrets.
+O Argo CD nao constroi imagens nem provisiona bancos AWS. Ele aplica os
+SealedSecrets; o controller sealed-secrets cria os Secrets no cluster.
 O projeto `default` e adequado ao escopo deste lab de um unico ambiente.
 
 ## 3. Acessar o Argo CD
@@ -100,7 +101,7 @@ nem removem recursos automaticamente.
 
 Ordem dentro da unica Application:
 
-1. Wave 0: Namespace, ConfigMaps, Services, Middleware e Ingress.
+1. Wave 0: Namespace, ConfigMaps, SealedSecrets, Services, Middleware e Ingress.
 2. Wave 1: Job `postgres-schema-init`, hook **Sync**, usando o ConfigMap
    e o Secret ja disponiveis.
 3. Wave 2: Deployments e HPAs, somente apos o sucesso do Job.
@@ -121,9 +122,9 @@ kubectl --context "$CTX" -n production get pods,hpa,ingress
 kubectl --context "$CTX" -n production logs job/postgres-schema-init
 ```
 
-Depois de gerar a API key no auth-service, atualize `SERVICE_API_KEY`
-no arquivo local de Secrets e reaplique-o. Reinicie evaluation-service
-para carregar o valor novo (instrucoes no README do Kubernetes).
+Depois de gerar a API key no auth-service, atualize `SERVICE_API_KEY` no
+SealedSecret com `kubeseal --merge-into`, faca commit, sincronize e reinicie
+evaluation-service (instrucoes no README do Kubernetes).
 
 Traefik preserva as URLs `/auth-service/...`, `/flag-service/...` etc.,
 removendo o prefixo antes de enviar ao microsservico. Valide com:

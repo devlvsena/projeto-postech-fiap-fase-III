@@ -21,6 +21,12 @@ variable "metrics_server_chart_version" {
   default     = "3.14.0"
 }
 
+variable "sealed_secrets_chart_version" {
+  description = "Versao do chart sealed-secrets (controller dos SealedSecrets)"
+  type        = string
+  default     = "2.20.0"
+}
+
 variable "traefik_chart_version" {
   description = "Versao do chart Traefik (requer Kubernetes >= 1.30)"
   type        = string

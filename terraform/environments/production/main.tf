@@ -99,6 +99,25 @@ resource "helm_release" "metrics_server" {
   depends_on = [module.eks]
 }
 
+# Descriptografa no cluster os SealedSecrets versionados no Git (kubeseal).
+resource "helm_release" "sealed_secrets" {
+  name       = "sealed-secrets"
+  namespace  = "kube-system"
+  repository = "https://bitnami.github.io/sealed-secrets"
+  chart      = "sealed-secrets"
+  version    = var.sealed_secrets_chart_version
+
+  values = [
+    yamlencode({
+      fullnameOverride = "sealed-secrets-controller"
+    })
+  ]
+
+  wait       = true
+  timeout    = 600
+  depends_on = [module.eks]
+}
+
 resource "helm_release" "traefik" {
   name             = "traefik"
   namespace        = "traefik"

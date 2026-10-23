@@ -9,9 +9,16 @@ resources:
   - db-init
   - ingress.yaml
   - middleware.yaml
+  # Secrets criptografados com kubeseal; só o controller do cluster descriptografa.
+  - sealed-secrets/auth-service-secret.yaml
+  - sealed-secrets/flag-service-secret.yaml
+  - sealed-secrets/targeting-service-secret.yaml
+  - sealed-secrets/evaluation-service-secret.yaml
+  - sealed-secrets/analytics-service-secret.yaml
+  - sealed-secrets/postgres-admin-secret.yaml
 
 # APP_ENV=production faz os serviços usarem os SDKs reais da AWS (sem
-# endpoints locais). Secrets sao aplicados separadamente, fora do Git.
+# endpoints locais). Secrets versionados como SealedSecrets (sealed-secrets/).
 configMapGenerator:
   - name: evaluation-service-config
     behavior: merge

@@ -74,7 +74,7 @@ Em produção, Postgres, Redis, SQS e DynamoDB **não rodam como pods**: o overl
 recursos reais da AWS (RDS, ElastiCache, SQS e DynamoDB) via ConfigMap/Secret. Pré-requisitos:
 
 - Infra criada pelo Terraform em `terraform/environments/production` (VPC, EKS, RDS,
-  ElastiCache, SQS, DynamoDB, ECR) — o mesmo `apply` instala Argo CD, metrics-server e Traefik.
+  ElastiCache, SQS, DynamoDB, ECR) — o mesmo `apply` instala Argo CD, metrics-server, Traefik e Sealed Secrets.
 - Credenciais AWS válidas (`aws sts get-caller-identity` funcionando) para build/push de
   imagens e, neste laboratório, para autenticação do `evaluation-service`/`analytics-service`
   (veja a nota sobre IRSA abaixo).
@@ -98,10 +98,8 @@ done
 
 # 2. Trocar "latest" pela $TAG em k8s/overlays/production/kustomization.yaml, commit e push
 
-# 3. Secrets ficam fora do Git: copie o modelo, preencha e aplique manualmente
-cp k8s/overlays/production/secrets.example.yaml k8s/overlays/production/secrets.local.yaml
-kubectl create namespace production --dry-run=client -o yaml | kubectl apply -f -
-kubectl apply -f k8s/overlays/production/secrets.local.yaml
+# 3. Secrets versionados como SealedSecrets (criptografados com kubeseal), em
+#    k8s/overlays/production/sealed-secrets/ — ver k8s/README.md
 
 # 4. Registrar a Application (uma vez) e sincronizar pela UI/CLI do Argo CD
 kubectl apply -f k8s/argocd/application.yaml
@@ -121,20 +119,9 @@ idempotentes; o RDS não roda `docker-entrypoint-initdb.d`).
 > possível criar as IAM Roles necessárias, então as credenciais são fornecidas via
 > `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_SESSION_TOKEN` diretamente nos secrets
 > desses dois serviços (o SDK da AWS prioriza variáveis de ambiente antes de tentar IRSA).
-> Se a sessão da AWS Academy expirar, atualize esses valores e reinicie os deployments:
->
-> ```bash
-> AK=$(aws --profile <seu-profile> configure get aws_access_key_id)
-> SK=$(aws --profile <seu-profile> configure get aws_secret_access_key)
-> ST=$(aws --profile <seu-profile> configure get aws_session_token)
->
-> kubectl patch secret evaluation-service-secret -n production --type merge -p \
->   "{\"data\":{\"AWS_ACCESS_KEY_ID\":\"$(printf '%s' "$AK" | base64)\",\"AWS_SECRET_ACCESS_KEY\":\"$(printf '%s' "$SK" | base64)\",\"AWS_SESSION_TOKEN\":\"$(printf '%s' "$ST" | base64)\"}}"
-> kubectl patch secret analytics-service-secret -n production --type merge -p \
->   "{\"data\":{\"AWS_ACCESS_KEY_ID\":\"$(printf '%s' "$AK" | base64)\",\"AWS_SECRET_ACCESS_KEY\":\"$(printf '%s' "$SK" | base64)\",\"AWS_SESSION_TOKEN\":\"$(printf '%s' "$ST" | base64)\"}}"
->
-> kubectl rollout restart deployment/evaluation-service deployment/analytics-service -n production
-> ```
+> Se a sessão da AWS Academy expirar, gere novamente esses valores nos SealedSecrets com
+> `kubeseal --merge-into`, faça commit/push, sincronize no Argo CD e reinicie os dois
+> deployments (passo a passo em [k8s/README.md](k8s/README.md)).
 >
 > Em uma conta AWS real (fora de lab), prefira recriar o IRSA em vez deste workaround.
 

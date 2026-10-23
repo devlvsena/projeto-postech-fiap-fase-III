@@ -12,7 +12,8 @@ k8s/
   overlays/
     development/            # Minikube: banco, cache e emuladores locais
     production/             # EKS: RDS, Valkey, SQS e DynamoDB externos
-      secrets.example.yaml  # Modelo, nao incluido no Kustomize
+      sealed-secrets/       # Secrets criptografados (kubeseal)
+      secrets.example.yaml  # Modelo das chaves, nao incluido no Kustomize
 ```
 
 ## Desenvolvimento: Minikube sem Argo CD
@@ -40,7 +41,7 @@ Nao habilite addons enquanto outro controller gerenciar os mesmos recursos.
 
 1. [Terraform](../terraform/README.md) cria a infraestrutura e instala
    Argo CD, metrics-server e Traefik.
-2. Publique as imagens e prepare os Secrets conforme as secoes abaixo.
+2. Publique as imagens e gere os SealedSecrets conforme as secoes abaixo.
 3. Registre a [Application](argocd/application.yaml) e faca sync manual,
    seguindo o [guia do Argo CD](argocd/README.md).
 
@@ -94,41 +95,57 @@ garantida**. Troque-o por tags reais antes do primeiro sync.
 Faca commit e push desse arquivo. O Argo CD le o Git remoto, nao sua maquina.
 A pipeline de imagens existente nao substitui automaticamente esse passo.
 
-### Secrets fora do Git
+### Secrets: SealedSecrets versionados no Git
 
-Os seis Secrets nao fazem parte do overlay: sao pre-requisitos aplicados
-manualmente no lab. O Argo CD nao altera nem recria seus valores.
+Os seis Secrets ficam em `overlays/production/sealed-secrets/` como
+`SealedSecret`: criptografados com a chave publica do controller instalado
+pelo Terraform (`sealed-secrets-controller`, namespace `kube-system`). So o
+controller deste cluster consegue descriptografa-los; o Argo CD aplica os
+SealedSecrets e o controller cria os Secrets correspondentes.
+
+Instale o cliente: `brew install kubeseal`.
 
 ```bash
 export CTX=arn:aws:eks:us-east-1:042444213801:cluster/toggle-master-eks
-kubectl --context "$CTX" apply -f k8s/overlays/production/namespace.yaml
-cp k8s/overlays/production/secrets.example.yaml k8s/overlays/production/secrets.local.yaml
-chmod 600 k8s/overlays/production/secrets.local.yaml
+SEAL="kubeseal --context $CTX --controller-namespace kube-system --controller-name sealed-secrets-controller --format yaml"
 ```
 
-Preencha `secrets.local.yaml`, ignorado pelo Git, antes de aplica-lo:
+`secrets.example.yaml` documenta as chaves de cada Secret. Para gerar um
+SealedSecret a partir de um Secret preenchido localmente (nunca commitado):
 
 - Use `terraform output` para os endpoints RDS/Valkey, URL SQS e nome DynamoDB.
-  Os outputs ficam na stack `terraform/environments/production`.
-- Obtenha a senha RDS no Secrets Manager. O usuario padrao do modulo e `dbadmin`.
-  `POSTGRES_HOST` recebe somente o host, sem `:5432`.
-- Em `DATABASE_URL`, codifique caracteres especiais de usuario/senha com
-  percent-encoding. `POSTGRES_PASSWORD` recebe a senha original, nao codificada.
+- Obtenha a senha RDS no Secrets Manager. `POSTGRES_HOST` recebe so o host.
+- Em `DATABASE_URL`, aplique percent-encoding na senha.
 - Use `rediss://` no Valkey, pois o modulo habilita TLS.
-- Gere uma `MASTER_KEY` para o lab; nao use credenciais de outras contas.
-- Preencha as credenciais temporarias AWS de evaluation/analytics.
-  Quando expirarem, atualize os Secrets e reinicie os dois Deployments.
-- `SERVICE_API_KEY` sera preenchida depois que auth-service estiver disponivel.
-  Este e o unico placeholder esperado durante o bootstrap da aplicacao.
 
 ```bash
-kubectl --context "$CTX" apply -f k8s/overlays/production/secrets.local.yaml
+$SEAL < /caminho/fora/do/repo/postgres-admin-secret.yaml \
+  > k8s/overlays/production/sealed-secrets/postgres-admin-secret.yaml
 ```
 
-**Nunca commite valores reais, mesmo temporarios ou em base64.** Os arquivos
-antigos foram retirados, mas o historico continua contendo valores anteriores:
-rotacione-os. Para producao real, prefira um cofre e workload identity.
-Se apagar o namespace, reaplique os Secrets antes do sync.
+Para alterar uma unica chave sem expor as demais, use `--merge-into`.
+Exemplo: renovar as credenciais temporarias do AWS Academy, que expiram:
+
+```bash
+for s in evaluation-service-secret analytics-service-secret; do
+  kubectl create secret generic "$s" -n production --dry-run=client -o json \
+    --from-literal=AWS_ACCESS_KEY_ID="$(aws configure get aws_access_key_id)" \
+    --from-literal=AWS_SECRET_ACCESS_KEY="$(aws configure get aws_secret_access_key)" \
+    --from-literal=AWS_SESSION_TOKEN="$(aws configure get aws_session_token)" \
+    | $SEAL --merge-into "k8s/overlays/production/sealed-secrets/$s.yaml"
+done
+git commit -am "chore(secrets): rotate AWS lab credentials" && git push
+```
+
+Depois do sync, reinicie evaluation-service e analytics-service para que
+carreguem os valores novos.
+
+Cuidados:
+
+- A chave privada existe so no cluster. Se o EKS for recriado, os arquivos
+  atuais nao abrem mais: gere-os de novo com o certificado do novo controller.
+- Nao edite manualmente o Secret gerado; altere o SealedSecret no Git.
+- O historico do Git ainda contem os Secrets antigos em base64: rotacione-os.
 
 ### Gerar a chave de evaluation-service
 
@@ -138,24 +155,22 @@ Depois do primeiro sync, encaminhe o auth-service em outro terminal:
 kubectl --context "$CTX" -n production port-forward svc/auth-service 8001:8001
 ```
 
-Use a MASTER_KEY do arquivo local, sem registra-la em comandos compartilhados:
+A `MASTER_KEY` so existe no cluster. Leia-a sem exibir no terminal:
 
 ```bash
-read -s MASTER_KEY
-curl --fail -X POST http://localhost:8001/admin/keys \
+MASTER_KEY=$(kubectl --context "$CTX" -n production get secret auth-service-secret \
+  -o jsonpath='{.data.MASTER_KEY}' | base64 -d)
+API_KEY=$(curl --fail -s -X POST http://localhost:8001/admin/keys \
   -H "Authorization: Bearer $MASTER_KEY" \
   -H 'Content-Type: application/json' \
-  -d '{"name":"evaluation-service"}'
-unset MASTER_KEY
+  -d '{"name":"evaluation-service"}' | python3 -c 'import json,sys;print(json.load(sys.stdin)["key"])')
+kubectl create secret generic evaluation-service-secret -n production --dry-run=client -o json \
+  --from-literal=SERVICE_API_KEY="$API_KEY" \
+  | $SEAL --merge-into k8s/overlays/production/sealed-secrets/evaluation-service-secret.yaml
+unset MASTER_KEY API_KEY
 ```
 
-Copie a chave retornada para `SERVICE_API_KEY` no arquivo local, reaplique
-os Secrets e reinicie o servico:
-
-```bash
-kubectl --context "$CTX" apply -f k8s/overlays/production/secrets.local.yaml
-kubectl --context "$CTX" -n production rollout restart deployment/evaluation-service
-```
+Faca commit e push, sincronize no Argo CD e reinicie evaluation-service.
 
 ### Schema e rotas
 

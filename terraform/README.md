@@ -2,7 +2,7 @@
 
 Execute os comandos a partir da raiz do repositorio. A stack
 `environments/production` provisiona a infraestrutura AWS e instala Argo CD,
-metrics-server e Traefik pelo provider Helm. A stack `development` contem
+metrics-server, Traefik e Sealed Secrets pelo provider Helm. A stack `development` contem
 somente ECR; ela nao e necessaria para o Minikube.
 
 ## Inicializar
