@@ -35,3 +35,6 @@ override.tf.json
 
 # Ignore virtual environment directories
 .venv/
+
+# Production credentials are applied manually, never rendered by Argo CD.
+k8s/overlays/production/secrets.local.yaml

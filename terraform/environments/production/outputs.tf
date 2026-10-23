@@ -1,8 +1,3 @@
-# ---- S3 outputs
-output "aws_s3_bucket" {
-  value = module.s3.s3_bucket_name
-}
-
 # ---- ECR outputs
 output "ecr_repository_urls" {
   value = module.ecr.repository_urls
@@ -84,4 +79,9 @@ output "eks_cluster_name" {
 
 output "eks_cluster_endpoint" {
   value = module.eks.cluster_endpoint
+}
+
+# ---- ArgoCD outputs
+output "argocd_server" {
+  value = helm_release.argocd.status
 }

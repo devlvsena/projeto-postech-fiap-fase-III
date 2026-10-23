@@ -1,12 +1,15 @@
 # Job de execução única: aplica o mesmo schema usado em desenvolvimento
 # (k8s/base/postgres-init) contra a instância RDS real, usando credenciais
-# administrativas em secrets/postgres-admin-secret.yaml.
-# Rode "kubectl delete job postgres-schema-init" antes de reaplicar, já que
-# Jobs concluídos não são recriados automaticamente pelo kustomize/kubectl apply.
+# administrativas aplicadas fora do Git. Sync (nao PreSync) permite que o
+# ConfigMap com os scripts exista antes do Job.
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: postgres-schema-init
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   backoffLimit: 3
   template:
@@ -25,11 +28,10 @@ spec:
             - bash
             - -c
             - |
-              set -uo pipefail
+              set -euo pipefail
               for f in /scripts/*.sql; do
                 echo "Aplicando $f..."
-                PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 -f "$f" \
-                  || echo "Aviso: $f pode já ter sido aplicado antes, seguindo em frente."
+                PGPASSWORD="$POSTGRES_PASSWORD" psql -h "$POSTGRES_HOST" -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 -f "$f"
               done
           volumeMounts:
             - name: init-scripts

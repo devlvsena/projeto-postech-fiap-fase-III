@@ -1,197 +1,155 @@
-# Argo CD no cluster local
+# Argo CD somente no EKS
 
-Instala o Argo CD no Minikube usando o chart oficial `argo/argo-cd`, fixado na
-versão `10.10.5`. O serviço web fica como `ClusterIP`, sem expor o Argo CD na
-rede; use port-forward para acessá-lo localmente.
+Este laboratorio usa uma unica Application, sem App of Apps nem AppProjects
+adicionais. O nome `production` identifica o ambiente AWS academico, nao uma
+configuracao completa de alta disponibilidade para producao comercial.
 
-## Pré-requisitos
+```text
+Terraform -> VPC, EKS, RDS, Valkey, SQS, DynamoDB e ECR
+          -> Helm: Argo CD, metrics-server e Traefik
+Argo CD   -> k8s/overlays/production -> microsservicos
+Minikube  -> kubectl apply -k k8s/overlays/development (sem Argo CD)
+```
 
-- Helm 3 e `kubectl` instalados.
-- Docker Desktop em execução.
-- Cluster Minikube iniciado (`minikube start`).
+## Arquivos e responsabilidades
 
-Confirme que o contexto local existe e está acessível:
+- [values.yaml](values.yaml): configuracao do release Argo CD no EKS.
+- [application.yaml](application.yaml): Application `togglemaster-production`.
+- [Terraform de producao](../../terraform/environments/production/main.tf):
+  instala os tres charts. Nao os instale novamente pelo Argo CD.
+
+O Argo CD fica como ClusterIP, sem Ingress, com HTTPS habilitado.
+Server, repo-server e ApplicationSet usam duas replicas; Redis usa uma.
+Isso nao representa uma instalacao totalmente HA.
+
+## 1. Provisionar a plataforma
+
+Siga o [README do Terraform](../../terraform/README.md). Em um cluster novo,
+crie primeiro o EKS e depois rode o apply completo para os releases Helm.
+O chart Traefik fixado requer Kubernetes >= 1.30.
 
 ```bash
-kubectl --context minikube get nodes
+export AWS_PROFILE=aws-lab
+aws eks update-kubeconfig --name toggle-master-eks --region us-east-1 --profile aws-lab
+export CTX=arn:aws:eks:us-east-1:042444213801:cluster/toggle-master-eks
+
+kubectl --context "$CTX" get nodes
+kubectl --context "$CTX" -n argocd get pods
+kubectl --context "$CTX" top nodes
+kubectl --context "$CTX" -n traefik get service traefik
 ```
 
-Todos os comandos abaixo especificam o contexto `minikube` para evitar aplicar
-recursos acidentalmente no contexto Kubernetes atualmente selecionado.
+Traefik cria um Service LoadBalancer com NLB publico nas subnets publicas.
+Usamos o provisionamento legado do EKS (`aws-load-balancer-type: nlb`), sem
+AWS Load Balancer Controller nem EKS Auto Mode. A identidade/roles do lab
+precisam permitir o provisionamento do NLB; um endereco pendente exige
+inspecionar os eventos do Service. Ha cobranca pelo balanceador.
+O HTTP publico da aplicacao e apenas para o lab; nao envie credenciais reais
+por ele. Para uso real, configure dominio e TLS.
 
-## Instalar ou atualizar
+Antes de instalar, confirme que metrics-server/Traefik nao sao gerenciados
+por outro Helm release, addon ou Application. Nao adote releases existentes
+sem verificar o state e a propriedade dos recursos.
+
+## 2. Preparar a aplicacao
+
+**Nao sincronize antes destes passos:**
+
+1. Publique as cinco imagens no ECR e atualize o overlay com tags imutaveis,
+   conforme o [README do Kubernetes](../README.md).
+2. Preencha e aplique os seis Secrets a partir do modelo local ignorado pelo Git.
+   Use endpoints da conta atual e credenciais AWS temporarias validas.
+3. Rotacione valores que ja foram versionados. Remover arquivos nao remove
+   credenciais do historico do Git.
+4. Faca commit e push das alteracoes. A Application acompanha `feature/argocd`;
+   depois do merge, ajuste `targetRevision` para a branch desejada.
+
+O Argo CD nao constroi imagens, nao provisiona bancos AWS nem gera Secrets.
+O projeto `default` e adequado ao escopo deste lab de um unico ambiente.
+
+## 3. Acessar o Argo CD
 
 ```bash
-helm repo add argo https://argoproj.github.io/argo-helm
-helm repo update argo
-
-helm upgrade --install argocd argo/argo-cd \
-  --kube-context minikube \
-  --namespace argocd \
-  --create-namespace \
-  --version 10.10.5 \
-  --values k8s/argocd/values.yaml
+kubectl --context "$CTX" -n argocd port-forward svc/argocd-server 8443:443
 ```
 
-Verifique os pods:
+Acesse <https://localhost:8443>, com certificado autoassinado.
+Em outro terminal, obtenha a senha inicial (nao a copie para o Git):
 
 ```bash
-kubectl --context minikube get pods -n argocd
+kubectl --context "$CTX" -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath='{.data.password}' | base64 -d; echo
 ```
 
-## Acessar a interface
+Entre como `admin`, troque a senha e remova o Secret inicial apos a troca.
 
-Em um terminal, encaminhe a porta HTTPS do serviço:
+## 4. Registrar e sincronizar
+
+Na raiz do repositorio:
 
 ```bash
-kubectl --context minikube port-forward \
-  --namespace argocd \
-  service/argocd-server 8080:443
+kubectl --context "$CTX" apply -f k8s/argocd/application.yaml
 ```
 
-Acesse <https://localhost:8080>. O certificado é autoassinado no setup local.
+Na interface, abra `togglemaster-production`, revise o diff e clique em
+**Sync**, sem marcar **Prune**. Nao use sync seletivo de recursos: hooks
+nao executam em sync seletivo.
 
-Para obter a senha inicial do usuário `admin`:
+O sync e manual: pushes tornam a Application OutOfSync, mas nao aplicam
+nem removem recursos automaticamente.
+
+Ordem dentro da unica Application:
+
+1. Wave 0: Namespace, ConfigMaps, Services, Middleware e Ingress.
+2. Wave 1: Job `postgres-schema-init`, hook **Sync**, usando o ConfigMap
+   e o Secret ja disponiveis.
+3. Wave 2: Deployments e HPAs, somente apos o sucesso do Job.
+
+O hook nao e PreSync: no primeiro deploy, os scripts ainda nao existiriam.
+`BeforeHookCreation` recria o Job em cada sync completo, evitando erros
+de campos imutaveis. SQL cria bancos somente se ausentes; erros reais
+interrompem o Job e o sync. O ultimo Job fica disponivel para logs.
+
+O HPA controla replicas. `ignoreDifferences` com
+`RespectIgnoreDifferences=true` evita que o Argo CD reverta esse valor.
+
+## 5. Validar
 
 ```bash
-kubectl --context minikube get secret argocd-initial-admin-secret \
-  --namespace argocd \
-  --output jsonpath='{.data.password}' | base64 --decode
+kubectl --context "$CTX" -n argocd get application togglemaster-production
+kubectl --context "$CTX" -n production get pods,hpa,ingress
+kubectl --context "$CTX" -n production logs job/postgres-schema-init
 ```
 
-Após o primeiro login, altere a senha inicial. Esse Secret é criado pelo chart
-e não deve ser copiado para este repositório.
+Depois de gerar a API key no auth-service, atualize `SERVICE_API_KEY`
+no arquivo local de Secrets e reaplique-o. Reinicie evaluation-service
+para carregar o valor novo (instrucoes no README do Kubernetes).
 
-## Criar a Application de desenvolvimento
-
-Uma `Application` é o recurso do Argo CD que liga uma origem no Git a um destino
-no cluster. A [apps/development.yaml](apps/development.yaml) instrui o Argo CD a
-renderizar o overlay [k8s/overlays/development](../overlays/development) e
-aplicar o resultado no namespace `development` do próprio Minikube.
-
-### Campos da Application
-
-| Campo | Valor | Significado |
-|---|---|---|
-| `metadata.namespace` | `argocd` | A Application fica no namespace do Argo CD, não no da aplicação |
-| `spec.project` | `default` | Projeto sem restrições, adequado apenas para o ambiente local |
-| `source.repoURL` | repositório no GitHub | O Argo CD clona o repositório remoto, não lê arquivos locais |
-| `source.targetRevision` | `main` | Branch, tag ou SHA acompanhado pelo Argo CD |
-| `source.path` | `k8s/overlays/development` | Diretório com `kustomization.yaml`; o Argo CD detecta o Kustomize automaticamente |
-| `destination.server` | `https://kubernetes.default.svc` | O mesmo cluster onde o Argo CD está instalado |
-| `destination.namespace` | `development` | Namespace padrão dos recursos sincronizados |
-
-Como o Argo CD lê o repositório remoto, alterações locais só são consideradas
-depois do `git push` para a revisão configurada em `targetRevision`.
-
-### Réplicas controladas pelo HPA
-
-Os Deployments têm `HorizontalPodAutoscaler`s com `minReplicas: 2` (definidos em
-`k8s/base/*/hpa.yaml`), enquanto o overlay de desenvolvimento declara uma
-réplica. Depois do sync, o HPA altera `spec.replicas` e, sem tratamento, o
-Argo CD mostraria a aplicação como `OutOfSync` permanentemente.
-
-Por isso, a Application declara:
-
-```yaml
-ignoreDifferences:
-  - group: apps
-    kind: Deployment
-    jsonPointers:
-      - /spec/replicas
-syncPolicy:
-  syncOptions:
-    - RespectIgnoreDifferences=true
-```
-
-- `ignoreDifferences` remove `/spec/replicas` da comparação entre Git e cluster.
-- `RespectIgnoreDifferences=true` evita que o sync sobrescreva o valor definido
-  pelo HPA.
-
-### Pré-requisitos do overlay
-
-Antes do primeiro sync, prepare o Minikube:
+Traefik preserva as URLs `/auth-service/...`, `/flag-service/...` etc.,
+removendo o prefixo antes de enviar ao microsservico. Valide com:
 
 ```bash
-minikube addons enable metrics-server
-minikube addons enable ingress
+LB=$(kubectl --context "$CTX" -n traefik get svc traefik \
+  -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+curl --fail "http://$LB/auth-service/health"
 ```
 
-- Sem o `metrics-server`, os HPAs não recebem métricas de CPU e o Argo CD os
-  marca como `Degraded`.
-- Sem o addon de ingress, o Ingress `microservices` permanece `Progressing`.
+O resultado esperado e `Synced/Healthy`, com HPAs recebendo metricas.
+O Argo CD consulta o Git periodicamente; use **Refresh** para antecipar.
 
-O overlay usa `imagePullPolicy: Never`, então as imagens dos serviços precisam
-existir dentro do Minikube. Construa-as conforme a seção "Ambiente de
-desenvolvimento" do [README do Kubernetes](../README.md). O Argo CD não
-constrói imagens; sem elas, os pods ficam em `ErrImageNeverPull`.
+## Migracao da estrutura anterior
 
-### Aplicar e sincronizar
+Os roots e as Applications de plataforma anteriores foram removidos apenas
+dos arquivos. Isso **nao desinstala nada dos clusters**.
 
-Registre a Application no cluster:
+- No Minikube, desenvolvimento passa a usar os addons e `kubectl`, sem Argo CD.
+  Se optar por recriar o cluster, lembre que isso apaga os dados locais.
+- Se ja houver App of Apps no EKS, desative a automacao do root antigo antes
+  da migracao e retire as Applications antigas sem cascade/finalizer.
+  Remover uma Application com cascade pode apagar o workload.
+- Confirme que nao restou um root reconciliando os caminhos antigos, nem
+  outro gerenciador dos charts que agora pertencem ao Terraform.
+- Nao aplique a Application de development no EKS.
 
-```bash
-kubectl --context minikube apply -f k8s/argocd/apps/development.yaml
-```
-
-A Application não tem `syncPolicy.automated`, portanto o Argo CD detecta as
-diferenças, mas só as aplica quando você solicita o sync. Revise o que será
-alterado antes de sincronizar:
-
-```bash
-argocd login localhost:8080 --username admin --insecure
-argocd app diff togglemaster-development
-argocd app sync togglemaster-development
-```
-
-Pela interface, abra `togglemaster-development` e use **Sync** →
-**Synchronize**.
-
-### Verificar o resultado
-
-```bash
-kubectl --context minikube get application togglemaster-development -n argocd
-kubectl --context minikube get pods -n development
-kubectl --context minikube get hpa -n development
-```
-
-O estado esperado é `Synced` e `Healthy`. Os dois status são independentes:
-
-| Status | Pergunta respondida |
-|---|---|
-| Sync (`Synced` / `OutOfSync`) | O cluster corresponde ao Git? |
-| Health (`Healthy` / `Progressing` / `Degraded`) | Os recursos estão funcionando? |
-
-Para listar o status de cada recurso:
-
-```bash
-argocd app get togglemaster-development
-```
-
-O Argo CD consulta o Git periodicamente (cerca de 3 minutos). Para atualizar
-imediatamente após um push, use **Refresh** na interface ou:
-
-```bash
-argocd app get togglemaster-development --refresh
-```
-
-### Problemas comuns
-
-| Sintoma | Causa provável | Ação |
-|---|---|---|
-| Deployments `OutOfSync` com réplicas diferentes | HPA alterou `spec.replicas` | Confirme o `ignoreDifferences` na Application aplicada |
-| HPAs `Degraded`, `TARGETS` com `<unknown>` | `metrics-server` ausente | `minikube addons enable metrics-server` |
-| Ingress `Progressing` | Controller de ingress ausente | `minikube addons enable ingress` |
-| Pods em `ErrImageNeverPull` | Imagem não existe no Minikube | Construa as imagens com `minikube image build` |
-| Pods com alguns restarts após o primeiro sync | Serviços subiram antes do Postgres/Redis | Normal se o contador parar de aumentar |
-| Mudança local não aparece no Argo CD | Commit não foi enviado ao GitHub | `git push` para a revisão de `targetRevision` |
-
-### Remover a Application
-
-```bash
-kubectl --context minikube delete -f k8s/argocd/apps/development.yaml
-```
-
-Como a Application não declara o finalizer
-`resources-finalizer.argocd.argoproj.io`, apagá-la remove apenas o registro no
-Argo CD; os recursos do namespace `development` continuam no cluster.
+Apagar `togglemaster-production` nao apaga os workloads: a Application nao
+tem finalizer de exclusao em cascata. O Terraform continua dono da plataforma.

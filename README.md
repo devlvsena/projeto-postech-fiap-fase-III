@@ -73,15 +73,17 @@ kubectl rollout restart deployment/<nome-do-serviço> -n development
 Em produção, Postgres, Redis, SQS e DynamoDB **não rodam como pods**: o overlay aponta para
 recursos reais da AWS (RDS, ElastiCache, SQS e DynamoDB) via ConfigMap/Secret. Pré-requisitos:
 
-- Cluster EKS já criado, com `kubectl` configurado no contexto correto.
-- RDS PostgreSQL, ElastiCache Redis, fila SQS e tabela DynamoDB já provisionados.
-- Repositórios ECR criados para os 5 serviços.
+- Infra criada pelo Terraform em `terraform/environments/production` (VPC, EKS, RDS,
+  ElastiCache, SQS, DynamoDB, ECR) — o mesmo `apply` instala Argo CD, metrics-server e Traefik.
 - Credenciais AWS válidas (`aws sts get-caller-identity` funcionando) para build/push de
   imagens e, neste laboratório, para autenticação do `evaluation-service`/`analytics-service`
   (veja a nota sobre IRSA abaixo).
 
+O deploy da aplicação é feito pelo **Argo CD** (Application única em
+[k8s/argocd/application.yaml](k8s/argocd/application.yaml)), não por `kubectl apply -k`.
+
 ```bash
-# 1. Build e push das imagens para o ECR (ver k8s/README.md para o script completo)
+# 1. Build e push das imagens para o ECR (repositórios sem prefixo, ex.: auth-service)
 AWS_ACCOUNT_ID=<sua-conta>
 AWS_REGION=us-east-1
 TAG=$(git rev-parse --short HEAD)
@@ -90,23 +92,28 @@ aws ecr get-login-password --region "$AWS_REGION" \
   | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
 
 for svc in auth-service flag-service targeting-service evaluation-service analytics-service; do
-  docker build -t "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/togglemaster/$svc:$TAG" "./services/${svc}-main"
-  docker push "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/togglemaster/$svc:$TAG"
+  docker build -t "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$svc:$TAG" "./toggle-master/microsservices/${svc}-main"
+  docker push "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$svc:$TAG"
 done
 
-# 2. Ajustar os endpoints reais da AWS em k8s/overlays/production/secrets/*.yaml
-#    (RDS, ElastiCache, SQS, DynamoDB — ver k8s/README.md)
+# 2. Trocar "latest" pela $TAG em k8s/overlays/production/kustomization.yaml, commit e push
 
-# 3. Aplicar o overlay de produção
-kubectl apply -k k8s/overlays/production
+# 3. Secrets ficam fora do Git: copie o modelo, preencha e aplique manualmente
+cp k8s/overlays/production/secrets.example.yaml k8s/overlays/production/secrets.local.yaml
+kubectl create namespace production --dry-run=client -o yaml | kubectl apply -f -
+kubectl apply -f k8s/overlays/production/secrets.local.yaml
 
-# 4. Acompanhar
+# 4. Registrar a Application (uma vez) e sincronizar pela UI/CLI do Argo CD
+kubectl apply -f k8s/argocd/application.yaml
+
+# 5. Acompanhar
 kubectl get pods -n production
 kubectl rollout status deployment/evaluation-service -n production
 ```
 
 O schema do Postgres (`auth_db`, `flags_db`, `targeting_db`) é aplicado automaticamente pelo
-Job `postgres-schema-init` no primeiro `apply` (o RDS não roda `docker-entrypoint-initdb.d`).
+Job `postgres-schema-init`, executado como hook do Argo CD a cada sync (os scripts são
+idempotentes; o RDS não roda `docker-entrypoint-initdb.d`).
 
 > **Nota sobre credenciais AWS (IRSA):** o padrão correto de produção é usar IRSA
 > (ServiceAccount + IAM Role via OIDC do EKS) para o `evaluation-service` e o
@@ -158,7 +165,7 @@ k6 run -e BASE_URL="http://localhost:8080" load_test/hpa-load-test.js
 
 ### Contra o EKS (overlay `production`)
 
-Use a URL pública do Load Balancer do `ingress-nginx`:
+Use a URL pública do NLB criado pelo Traefik:
 
 ```bash
 INGRESS_HOST=$(kubectl get ingress microservices -n production -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
