@@ -11,12 +11,48 @@ Argo CD   -> k8s/overlays/production -> microsservicos
 Minikube  -> kubectl apply -k k8s/overlays/development (sem Argo CD)
 ```
 
+## Getting started (resumo)
+
+Pre-requisitos: AWS CLI com o profile `aws-lab` valido, Terraform, `kubectl`
+e `kubeseal` (`brew install kubeseal`). As secoes seguintes detalham cada passo.
+
+```bash
+# 1. Infraestrutura + Argo CD, metrics-server, Traefik e Sealed Secrets
+export AWS_PROFILE=aws-lab
+cd terraform/environments/production
+terraform init
+terraform apply -target=module.eks   # primeira vez: o provider Helm depende do EKS
+terraform apply
+cd -
+
+# 2. Acesso ao cluster
+aws eks update-kubeconfig --name toggle-master-eks --region us-east-1 --profile aws-lab
+export CTX=arn:aws:eks:us-east-1:042444213801:cluster/toggle-master-eks
+kubectl --context "$CTX" -n argocd get pods
+
+# 3. Imagens no ECR e SealedSecrets no Git (ver ../README.md), depois commit e push
+
+# 4. Registrar a Application (uma vez)
+kubectl --context "$CTX" apply -f k8s/argocd/application.yaml
+
+# 5. Abrir a UI em https://localhost:8443 (usuario admin)
+kubectl --context "$CTX" -n argocd port-forward svc/argocd-server 8443:443
+kubectl --context "$CTX" -n argocd get secret argocd-initial-admin-secret \
+  -o jsonpath='{.data.password}' | base64 -d; echo
+```
+
+Na UI, abra `togglemaster-production` e clique em **Sync**. O resultado
+esperado e `Synced/Healthy` (secao 5).
+
 ## Arquivos e responsabilidades
 
 - [values.yaml](values.yaml): configuracao do release Argo CD no EKS.
 - [application.yaml](application.yaml): Application `togglemaster-production`.
 - [Terraform de producao](../../terraform/environments/production/main.tf):
-  instala os tres charts. Nao os instale novamente pelo Argo CD.
+  instala os quatro charts (Argo CD, metrics-server, Traefik e Sealed Secrets).
+  Nao os instale novamente pelo Argo CD.
+- [update-gitops.yml](../../.github/workflows/update-gitops.yml): atualiza as
+  tags de imagem no overlay apos o CI (secao 4).
 
 O Argo CD fica como ClusterIP, sem Ingress, com HTTPS habilitado.
 Server, repo-server e ApplicationSet usam duas replicas; Redis usa uma.
@@ -55,8 +91,9 @@ sem verificar o state e a propriedade dos recursos.
 
 **Nao sincronize antes destes passos:**
 
-1. Publique as cinco imagens no ECR e atualize o overlay com tags imutaveis,
-   conforme o [README do Kubernetes](../README.md).
+1. Publique as cinco imagens no ECR e atualize o overlay com tags imutaveis.
+   Apos o merge em `main`, o CI faz isso por servico (secao 4); antes disso,
+   siga o processo manual do [README do Kubernetes](../README.md).
 2. Gere os seis SealedSecrets com o `kubeseal` usando o certificado do
    controller deste cluster (ver [README do Kubernetes](../README.md)).
 3. Rotacione valores que ja foram versionados em texto puro. Remover arquivos
@@ -98,6 +135,75 @@ nao executam em sync seletivo.
 
 O sync e manual: pushes tornam a Application OutOfSync, mas nao aplicam
 nem removem recursos automaticamente.
+
+### Publicacao de tags pelo CI
+
+O CI publica imagens e registra a nova tag no Git; o Argo CD continua sendo
+o unico responsavel por aplicar no cluster.
+
+```text
+push em main (codigo do servico X)
+  -> <servico>-ci.yml: lint, seguranca, build e push no ECR (sha-<commit>)
+  -> update-gitops.yml: kustomize edit set image X -> build -> commit em main
+  -> Argo CD: OutOfSync -> Sync (manual neste lab)
+```
+
+Os cinco workflows de servico em [`.github/workflows`](../../.github/workflows)
+executam lint, verificacoes de seguranca e build. Em pull requests, o build
+nao usa credenciais AWS, nao publica imagens e nao altera manifests.
+
+Depois de um build publicado em `main`, cada workflow chama
+[`update-gitops.yml`](../../.github/workflows/update-gitops.yml), que executa
+[`update-gitops.sh`](../../.github/scripts/update-gitops.sh):
+
+1. Recebe o registry do ECR e a tag `sha-<SHA completo do commit>`, publicada
+   pelo build. O CI publica somente essa tag, sem `latest`, e o overlay usa
+   a mesma tag `sha-...`.
+2. Atualiza somente a imagem do respectivo servico no overlay de producao.
+3. Executa `kustomize build` **antes** do commit/push; uma falha bloqueia a publicacao.
+4. Faz commit e push somente do `kustomization.yaml` em `main`.
+   Se outro servico publicar ao mesmo tempo, refaz a alteracao na versao mais
+   recente de `main`, sem force push. Builds com codigo do servico desatualizado
+   sao rejeitados.
+5. Registra imagem, resultado e commit no resumo da execucao.
+
+O workflow tambem executa testes de integracao em repositorios Git temporarios
+antes de atualizar `main`. Para roda-los localmente, com Python 3, Git e
+Kustomize 5.8.1 no `PATH`:
+
+```bash
+python3 .github/scripts/tests/test_update_gitops.py -v
+```
+
+Configure os secrets `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` e
+`AWS_SESSION_TOKEN` do laboratorio no GitHub e renove-os quando expirarem.
+O job de atualizacao precisa de `GITHUB_TOKEN` com `contents: write`;
+as regras de protecao de `main` tambem precisam permitir esse push.
+Se a branch exigir PR para toda alteracao, sera necessario um fluxo via PR
+em vez de habilitar bypass indiscriminado.
+
+Commits automaticos mudam apenas o overlay, fora dos filtros de caminhos dos
+workflows de servico, e pushes com `GITHUB_TOKEN` nao disparam novos workflows
+de push. Nao ha loop de builds.
+
+Problemas comuns:
+
+| Sintoma | Causa provavel |
+|---|---|
+| Build falha no login/push do ECR | Credenciais do AWS Academy expiradas nos secrets do GitHub |
+| `Newer changes exist for <servico>` | Outro commit mais novo do servico esta em `main`; o CI dele publica a tag correta |
+| Push rejeitado apos 10 tentativas | Protecao de branch ou token sem `contents: write` |
+| Application nao fica OutOfSync | `targetRevision` ainda aponta para `feature/argocd`, ou use **Refresh** |
+
+O Terraform mantem os repositorios ECR com
+`image_tag_mutability = "IMMUTABLE"`. As tags por commit evitam reutilizar
+`latest` entre builds de commits diferentes e identificam a versao implantada.
+
+**Neste momento, o CI atualiza `main`, mas a Application ainda acompanha
+`feature/argocd`.** Nenhuma mudanca e aplicada ao cluster por esse fluxo.
+Depois do merge e da revisao dos manifests, ajuste `targetRevision` para
+`main` e aplique a Application. O sync continua manual; o CI nao chama
+`argocd app sync` e nao habilita `automated` nem `selfHeal`.
 
 Ordem dentro da unica Application:
 

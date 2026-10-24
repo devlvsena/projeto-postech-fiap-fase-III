@@ -83,7 +83,9 @@ O deploy da aplicação é feito pelo **Argo CD** (Application única em
 [k8s/argocd/application.yaml](k8s/argocd/application.yaml)), não por `kubectl apply -k`.
 
 ```bash
-# 1. Build e push das imagens para o ECR (repositórios sem prefixo, ex.: auth-service)
+# 1. Build e push das imagens para o ECR (repositórios sem prefixo, ex.: auth-service).
+#    Após o merge em main, o CI faz este passo e o 2 automaticamente
+#    (ver k8s/argocd/README.md, "Publicacao de tags pelo CI").
 AWS_ACCOUNT_ID=<sua-conta>
 AWS_REGION=us-east-1
 TAG=$(git rev-parse --short HEAD)
@@ -92,11 +94,11 @@ aws ecr get-login-password --region "$AWS_REGION" \
   | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
 
 for svc in auth-service flag-service targeting-service evaluation-service analytics-service; do
-  docker build -t "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$svc:$TAG" "./toggle-master/microsservices/${svc}-main"
+  docker build --platform linux/amd64 -t "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$svc:$TAG" "./toggle-master/microsservices/${svc}-main"
   docker push "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$svc:$TAG"
 done
 
-# 2. Trocar "latest" pela $TAG em k8s/overlays/production/kustomization.yaml, commit e push
+# 2. Atualizar newTag para $TAG em k8s/overlays/production/kustomization.yaml, commit e push
 
 # 3. Secrets versionados como SealedSecrets (criptografados com kubeseal), em
 #    k8s/overlays/production/sealed-secrets/ — ver k8s/README.md

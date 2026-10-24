@@ -40,7 +40,7 @@ Nao habilite addons enquanto outro controller gerenciar os mesmos recursos.
 ## AWS: infraestrutura com Terraform, aplicacao com Argo CD
 
 1. [Terraform](../terraform/README.md) cria a infraestrutura e instala
-   Argo CD, metrics-server e Traefik.
+   Argo CD, metrics-server, Traefik e Sealed Secrets.
 2. Publique as imagens e gere os SealedSecrets conforme as secoes abaixo.
 3. Registre a [Application](argocd/application.yaml) e faca sync manual,
    seguindo o [guia do Argo CD](argocd/README.md).
@@ -50,6 +50,12 @@ devem vir da infraestrutura atual, nao de uma sessao antiga.
 O Argo CD acompanha `feature/argocd`; altere a revisao apos o merge.
 
 ### Publicar imagens no ECR
+
+Apos o merge em `main`, os workflows de CI publicam a imagem com a tag
+`sha-<commit>` e atualizam o overlay automaticamente (ver
+[publicacao de tags pelo CI](argocd/README.md#publicacao-de-tags-pelo-ci)).
+O processo manual abaixo serve para o primeiro deploy ou para testar a
+partir de outra branch.
 
 Execute na raiz do repositorio, com Docker disponivel:
 
@@ -90,10 +96,9 @@ Com a CLI `kustomize` instalada, atualize o overlay:
 
 Alternativamente, edite os cinco `newName`/`newTag` no
 [kustomization.yaml](overlays/production/kustomization.yaml).
-O `latest` presente no arquivo e um valor inicial, **nao uma imagem publicada
-garantida**. Troque-o por tags reais antes do primeiro sync.
+Use apenas tags `sha-...` ou de commit que existem no ECR; o CI nao publica
+`latest`.
 Faca commit e push desse arquivo. O Argo CD le o Git remoto, nao sua maquina.
-A pipeline de imagens existente nao substitui automaticamente esse passo.
 
 ### Secrets: SealedSecrets versionados no Git
 
@@ -102,6 +107,15 @@ Os seis Secrets ficam em `overlays/production/sealed-secrets/` como
 pelo Terraform (`sealed-secrets-controller`, namespace `kube-system`). So o
 controller deste cluster consegue descriptografa-los; o Argo CD aplica os
 SealedSecrets e o controller cria os Secrets correspondentes.
+
+```text
+Secret (local, fora do Git) --kubeseal--> SealedSecret (Git)
+  --Argo CD--> SealedSecret (cluster) --controller--> Secret (cluster)
+```
+
+O escopo e `strict`: o SealedSecret so abre com o **mesmo nome e namespace**
+(`production`) usados ao criptografar. Renomear ou mudar o namespace exige
+gerar o arquivo de novo.
 
 Instale o cliente: `brew install kubeseal`.
 
@@ -138,13 +152,29 @@ git commit -am "chore(secrets): rotate AWS lab credentials" && git push
 ```
 
 Depois do sync, reinicie evaluation-service e analytics-service para que
-carreguem os valores novos.
+carreguem os valores novos:
+
+```bash
+kubectl --context "$CTX" -n production rollout restart \
+  deployment/evaluation-service deployment/analytics-service
+```
+
+Para conferir se o controller abriu os arquivos (condicao `Synced=True`):
+
+```bash
+kubectl --context "$CTX" -n production get sealedsecrets
+kubectl --context "$CTX" -n production get secrets
+```
 
 Cuidados:
 
 - A chave privada existe so no cluster. Se o EKS for recriado, os arquivos
   atuais nao abrem mais: gere-os de novo com o certificado do novo controller.
 - Nao edite manualmente o Secret gerado; altere o SealedSecret no Git.
+- Aplicar um SealedSecret direto no cluster sem commit funciona so ate o
+  proximo sync: o Argo CD volta para a versao do Git.
+- Variaveis de ambiente so sao lidas na inicializacao do pod; apos trocar um
+  Secret, faca `rollout restart` do Deployment.
 - O historico do Git ainda contem os Secrets antigos em base64: rotacione-os.
 
 ### Gerar a chave de evaluation-service
@@ -170,7 +200,11 @@ kubectl create secret generic evaluation-service-secret -n production --dry-run=
 unset MASTER_KEY API_KEY
 ```
 
-Faca commit e push, sincronize no Argo CD e reinicie evaluation-service.
+Faca commit e push, sincronize no Argo CD e reinicie evaluation-service:
+
+```bash
+kubectl --context "$CTX" -n production rollout restart deployment/evaluation-service
+```
 
 ### Schema e rotas
 
