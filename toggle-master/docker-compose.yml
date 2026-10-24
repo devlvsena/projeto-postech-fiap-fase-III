@@ -1,11 +1,11 @@
 services:
   auth-service:
-    build: ./services/auth-service-main
+    build: ./microsservices/auth-service-main
     container_name: auth-service
     ports:
       - "8001:8001"
     env_file:
-       - ./services/auth-service-main/.env
+      - ./microsservices/auth-service-main/.env
     depends_on:
       postgres:
         condition: service_healthy    
@@ -13,12 +13,12 @@ services:
     networks:
       - toggle-master-network
   flag-service:
-    build: ./services/flag-service-main
+    build: ./microsservices/flag-service-main
     container_name: flag-service
     ports:
       - "8002:8002"
     env_file:
-       - ./services/flag-service-main/.env
+      - ./microsservices/flag-service-main/.env
     depends_on:
       postgres:
         condition: service_healthy
@@ -28,12 +28,12 @@ services:
     networks:
       - toggle-master-network
   targeting-service:
-    build: ./services/targeting-service-main
+    build: ./microsservices/targeting-service-main
     container_name: targeting-service
     ports:
       - "8003:8003"
     env_file:
-       - ./services/targeting-service-main/.env
+      - ./microsservices/targeting-service-main/.env
     depends_on:
       postgres:
         condition: service_healthy
@@ -43,12 +43,12 @@ services:
     networks:
       - toggle-master-network
   evaluation-service:
-    build: ./services/evaluation-service-main
+    build: ./microsservices/evaluation-service-main
     container_name: evaluation-service
     ports:
       - "8004:8004"
     env_file:
-       - ./services/evaluation-service-main/.env
+      - ./microsservices/evaluation-service-main/.env
     depends_on:
       flag-service:
         condition: service_healthy
@@ -62,12 +62,12 @@ services:
     networks:
       - toggle-master-network
   analytics-service:
-    build: ./services/analytics-service-main
+    build: ./microsservices/analytics-service-main
     container_name: analytics-service
     ports:
       - "8005:8005"
     env_file:
-      - ./services/analytics-service-main/.env
+      - ./microsservices/analytics-service-main/.env
     depends_on:
       elasticmq:
         condition: service_started
@@ -83,13 +83,15 @@ services:
     container_name: postgres
     ports:
       - "5432:5432"
-    env_file:
-      - ./local/postgres/.env
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=postgres
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./services/auth-service-main/db/init.sql:/docker-entrypoint-initdb.d/auth-service.sql
-      - ./services/flag-service-main/db/init.sql:/docker-entrypoint-initdb.d/flag-service.sql
-      - ./services/targeting-service-main/db/init.sql:/docker-entrypoint-initdb.d/targeting-service.sql
+      - ./microsservices/auth-service-main/db/init.sql:/docker-entrypoint-initdb.d/auth-service.sql
+      - ./microsservices/flag-service-main/db/init.sql:/docker-entrypoint-initdb.d/flag-service.sql
+      - ./microsservices/targeting-service-main/db/init.sql:/docker-entrypoint-initdb.d/targeting-service.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 3s
@@ -117,8 +119,9 @@ services:
     ports:
       - "9324:9324"
       - "9325:9325"
-    volumes:
-      - "./local/elasticmq/elasticmq.conf:/opt/elasticmq.conf"
+    configs:
+      - source: elasticmq_conf
+        target: /opt/elasticmq.conf
     networks:
       - toggle-master-network
   dynamodb-local:
@@ -166,3 +169,30 @@ volumes:
 
 networks:
   toggle-master-network:
+
+configs:
+  elasticmq_conf:
+    content: |
+      include classpath("application.conf")
+
+      node-address {
+        protocol = http
+        host = "*"
+        port = 9324
+        context-path = ""
+      }
+
+      rest-sqs {
+        enabled = true
+        bind-port = 9324
+        bind-hostname = "0.0.0.0"
+        sqs-limits = strict
+      }
+
+      queues {
+        evaluation-queue {
+          defaultVisibilityTimeout = 30 seconds
+          delay = 0 seconds
+          receiveMessageWait = 0 seconds
+        }
+      }

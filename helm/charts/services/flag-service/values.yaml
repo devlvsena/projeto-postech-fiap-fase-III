@@ -1,0 +1,56 @@
+# ---- ConfigMap ----
+configMap:
+  name: flag-service-config
+  data:
+    PORT: "8002"
+    AUTH_SERVICE_URL: "http://auth-service:8001"
+
+# ---- Secrets ----
+secrets:
+  name: flag-service-secret
+  type: Opaque
+  data:
+    DATABASE_URL: "postgres://postgres:postgres@postgres:5432/flags_db"
+
+# ---- Deployment ----
+deployment:
+  replicaCount: 2
+  image:
+    repository: "flag-service"
+    tag: latest
+    pullPolicy: IfNotPresent
+  containerPort: 8002
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8002
+    initialDelaySeconds: 10
+    periodSeconds: 15
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8002
+    initialDelaySeconds: 5
+    timeoutSeconds: 10
+
+# ---- HPA ----
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 5
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 70
+
+# ---- Service ----
+service:
+  enabled: true
+  type: ClusterIP
+  port: 8002
+  targetPort: 8002

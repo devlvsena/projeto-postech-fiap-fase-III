@@ -1,0 +1,68 @@
+# ---- ConfigMap ----
+configMap:
+  enabled: true
+  name: ""
+  data: {}
+
+# ---- Secrets ----
+secrets:
+  enabled: true
+  name: ""
+  type: Opaque
+  data: {}
+
+# ---- Deployment ----
+deployment:
+  replicaCount: 1
+  strategy:
+    type: RollingUpdate
+    maxSurge: 1
+    maxUnavailable: 1
+  image:
+    repository: ""
+    tag: latest
+    pullPolicy: IfNotPresent
+  containerPort: 8080
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8080
+    initialDelaySeconds: 10
+    periodSeconds: 15
+  readinessProbe:
+    httpGet:
+      path: /health
+      port: 8080
+    initialDelaySeconds: 5
+    timeoutSeconds: 10
+
+# ---- HPA ----
+hpa:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 70
+
+# ---- Service ----
+service:
+  enabled: true
+  type: ClusterIP
+  port: 8080
+  targetPort: 8080
+
+# --- Ingress ----
+ingress:
+  enabled: false
+  annotations: {}
+  className: ""
+  host: ""
+  path: ""
+  pathType: Prefix

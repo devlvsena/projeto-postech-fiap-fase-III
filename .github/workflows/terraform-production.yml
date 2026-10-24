@@ -2,22 +2,25 @@ name: 🏗️ Terraform CI/CD
 
 on:
   pull_request:
+    branches: [ main ]
     paths:
-      - 'terraform/environments/development/**'
+      - 'terraform/environments/production/**'
       - 'terraform/modules/**'
-      - '.github/workflows/terraform-ci.yml'
+      - '.github/workflows/terraform-production.yml'
 
   push:
     branches: [ main ]
     paths:
-      - 'terraform/environments/development/**'
+      - 'terraform/environments/production/**'
       - 'terraform/modules/**'
-      - '.github/workflows/terraform-ci.yml'
+      - '.github/workflows/terraform-production.yml'
+
+if: false # Impede a execução de tudo abaixo
 
 env:
   AWS_REGION: us-east-1
   TF_VERSION: 1.10.0
-  WORKING_DIR: terraform/environments/development
+  WORKING_DIR: terraform/environments/production
 
 jobs:
   terraform-deploy:
