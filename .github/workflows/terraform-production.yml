@@ -14,8 +14,7 @@ on:
       - 'terraform/environments/production/**'
       - 'terraform/modules/**'
       - '.github/workflows/terraform-production.yml'
-
-if: false # Impede a execução de tudo abaixo
+  workflow_dispatch:
 
 env:
   AWS_REGION: us-east-1
