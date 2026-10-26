@@ -129,12 +129,14 @@ Na raiz do repositorio:
 kubectl --context "$CTX" apply -f k8s/argocd/application.yaml
 ```
 
-Na interface, abra `togglemaster-production`, revise o diff e clique em
-**Sync**, sem marcar **Prune**. Nao use sync seletivo de recursos: hooks
+Na interface, abra `togglemaster-production` para acompanhar a sincronizacao.
+Para um sync manual, clique em **Sync**, sem marcar **Prune**. Nao use sync seletivo de recursos: hooks
 nao executam em sync seletivo.
 
-O sync e manual: pushes tornam a Application OutOfSync, mas nao aplicam
-nem removem recursos automaticamente.
+O sync e automatico: alteracoes no Git na branch acompanhada pela Application
+sao aplicadas ao cluster. `prune` e `selfHeal` permanecem desabilitados:
+recursos nao sao removidos automaticamente e desvios feitos diretamente no
+cluster nao disparam autocorrecao.
 
 ### Publicacao de tags pelo CI
 
@@ -145,7 +147,7 @@ o unico responsavel por aplicar no cluster.
 push em main (codigo do servico X)
   -> <servico>-ci.yml: lint, seguranca, build e push no ECR (sha-<commit>)
   -> update-gitops.yml: kustomize edit set image X -> build -> commit em main
-  -> Argo CD: OutOfSync -> Sync (manual neste lab)
+  -> Argo CD: OutOfSync -> Sync automatico (quando acompanhar main)
 ```
 
 Os cinco workflows de servico em [`.github/workflows`](../../.github/workflows)
@@ -202,8 +204,8 @@ O Terraform mantem os repositorios ECR com
 **Neste momento, o CI atualiza `main`, mas a Application ainda acompanha
 `feature/argocd`.** Nenhuma mudanca e aplicada ao cluster por esse fluxo.
 Depois do merge e da revisao dos manifests, ajuste `targetRevision` para
-`main` e aplique a Application. O sync continua manual; o CI nao chama
-`argocd app sync` e nao habilita `automated` nem `selfHeal`.
+`main` e aplique a Application. O Argo CD sincroniza automaticamente; o CI nao
+chama `argocd app sync`. `selfHeal` permanece desabilitado.
 
 Ordem dentro da unica Application:
 

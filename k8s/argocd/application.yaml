@@ -18,5 +18,8 @@ spec:
       jsonPointers:
         - /spec/replicas
   syncPolicy:
+    automated:
+      prune: false
+      selfHeal: false
     syncOptions:
       - RespectIgnoreDifferences=true
