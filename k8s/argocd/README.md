@@ -230,9 +230,60 @@ kubectl --context "$CTX" -n production get pods,hpa,ingress
 kubectl --context "$CTX" -n production logs job/postgres-schema-init
 ```
 
-Depois de gerar a API key no auth-service, atualize `SERVICE_API_KEY` no
-SealedSecret com `kubeseal --merge-into`, faca commit, sincronize e reinicie
-evaluation-service (instrucoes no README do Kubernetes).
+### Credenciais e bootstrap dos SealedSecrets
+
+Os seis arquivos em `../overlays/production/sealed-secrets` precisam ser
+criptografados com o certificado do controller do cluster de destino.
+`no key could decrypt secret` indica que o controller nao tem a chave usada
+na criptografia; renovar apenas as credenciais AWS nao resolve esse erro.
+
+Use as credenciais temporarias do profile `aws-lab`, a senha vigente do RDS
+no AWS Secrets Manager e os endpoints reais de RDS, Valkey, SQS e DynamoDB.
+As URLs dos bancos devem escapar usuario e senha como componentes de URL.
+A senha do RDS e gerenciada pela AWS: recriar um SealedSecret nao rotaciona
+essa senha. Uma nova `MASTER_KEY` deve ser gerada de forma aleatoria.
+Nao versione valores em texto puro nem a chave privada do controller.
+
+No bootstrap, `SERVICE_API_KEY` contem o marcador criptografado
+`REPLACE_AFTER_AUTH_DEPLOY`. Ele permite criar o Secret, mas **nao autentica**
+chamadas do evaluation-service. Depois de inicializar o banco e iniciar o
+auth-service, gere uma chave pelo endpoint `POST /admin/keys`, conforme o
+[README do auth-service](../../toggle-master/microsservices/auth-service-main/README.md).
+Use a nova `MASTER_KEY` do Secret do cluster para essa chamada.
+
+Salve somente a chave retornada em um arquivo local protegido, fora do Git,
+sem quebra de linha final. Substitua o caminho abaixo pelo desse arquivo:
+
+```bash
+kubectl create secret generic evaluation-service-secret \
+  --namespace production \
+  --from-file=SERVICE_API_KEY=/caminho/seguro/service-api-key \
+  --dry-run=client -o json |
+  kubeseal --context "$CTX" \
+    --controller-name sealed-secrets-controller \
+    --controller-namespace kube-system \
+    --merge-into k8s/overlays/production/sealed-secrets/evaluation-service-secret.yaml
+```
+
+Valide todos os arquivos sem aplicar recursos:
+
+```bash
+for secret in k8s/overlays/production/sealed-secrets/*.yaml; do
+  kubeseal --context "$CTX" --validate < "$secret" || exit 1
+done
+```
+
+Faca commit/push para a branch acompanhada pela Application e aguarde o sync.
+Depois, reinicie evaluation-service para carregar a chave atualizada:
+
+```bash
+kubectl --context "$CTX" -n production rollout restart deployment/evaluation-service
+kubectl --context "$CTX" -n production rollout status deployment/evaluation-service
+```
+
+Remova o arquivo local da API key apos concluir. Ao renovar as credenciais AWS,
+reinicie tambem analytics-service e evaluation-service depois do sync:
+variaveis carregadas via Secret nao mudam nos pods ja existentes.
 
 Traefik preserva as URLs `/auth-service/...`, `/flag-service/...` etc.,
 removendo o prefixo antes de enviar ao microsservico. Valide com:

@@ -7,7 +7,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/devlvsena/projeto-postech-fiap-fase-III.git
-    targetRevision: feature/argocd
+    targetRevision: main
     path: k8s/overlays/production
   destination:
     server: https://kubernetes.default.svc
