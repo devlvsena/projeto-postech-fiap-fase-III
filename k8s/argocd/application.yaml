@@ -6,7 +6,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/gabrielyuto/projeto-postech-fiap-fase-III.git
+    repoURL: https://github.com/devlvsena/projeto-postech-fiap-fase-III.git
     targetRevision: feature/argocd
     path: k8s/overlays/production
   destination:
