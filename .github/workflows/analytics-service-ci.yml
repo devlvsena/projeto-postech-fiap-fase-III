@@ -9,11 +9,15 @@ on:
     paths:
       - "toggle-master/microsservices/analytics-service-main/**"
       - ".github/workflows/analytics-service-ci.yml"
+      - ".github/workflows/update-gitops.yml"
+      - ".github/scripts/**"
   pull_request:
     branches: [main]
     paths:
       - "toggle-master/microsservices/analytics-service-main/**"
       - ".github/workflows/analytics-service-ci.yml"
+      - ".github/workflows/update-gitops.yml"
+      - ".github/scripts/**"
   workflow_dispatch:
 
 env:
@@ -22,8 +26,11 @@ env:
   AWS_REGION: us-east-1
   AWS_ECR_REPOSITORY: analytics-service
 
+permissions:
+  contents: read
+
 concurrency:
-  group: build-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -100,7 +107,7 @@ jobs:
           bandit -r . --severity-level high -x ./tests,./.venv
 
   # ============================================
-  # STAGE 2: BUILD (sem credenciais AWS)
+  # STAGE 2: BUILD & PUSH
   # ============================================
   build:
     name: 🏗️ Build & Push (ECR)
@@ -110,11 +117,14 @@ jobs:
       contents: read
     outputs:
       digest: ${{ steps.build.outputs.digest }}
+      ecr-registry: ${{ steps.ecr-login.outputs.registry }}
+      image-tag: sha-${{ github.sha }}
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v4
 
       - name: 🔑 Configurar credenciais AWS (lab)
+        if: github.event_name != 'pull_request'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -123,6 +133,7 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: 🔐 Login no ECR
+        if: github.event_name != 'pull_request'
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
@@ -136,15 +147,27 @@ jobs:
           images: ${{ steps.ecr-login.outputs.registry || 'local' }}/${{ env.AWS_ECR_REPOSITORY }}
           tags: |
             type=sha,format=long
-            type=raw,value=latest,enable={{is_default_branch}}
 
       - name: 🏗️ Build and Push
         id: build
         uses: docker/build-push-action@v6
         with:
           context: ${{ env.BUILD_CONTEXT }}
-          push: true
+          push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  update-gitops:
+    name: Update GitOps
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/update-gitops.yml
+    with:
+      ecr-registry: ${{ needs.build.outputs.ecr-registry }}
+      image-tag: ${{ needs.build.outputs.image-tag }}
+      service: analytics-service
+      source-sha: ${{ github.sha }}

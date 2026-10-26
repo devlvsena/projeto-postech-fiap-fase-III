@@ -1,161 +1,234 @@
-# Kubernetes (Kustomize: base + overlays)
+# Kubernetes: desenvolvimento local e laboratorio AWS
 
-Esta pasta usa [Kustomize](https://kubectl.docs.kubernetes.io/guides/introduction/kustomize/)
-para evitar reescrever manifests inteiros a cada ambiente.
+Os manifests usam Kustomize para compartilhar os recursos dos microsservicos.
 
-```
+```text
 k8s/
-  base/                     # Deployments/Services/ConfigMaps comuns a TODOS os ambientes
-    auth-service/
-    flag-service/
-    targeting-service/
-    evaluation-service/
-    analytics-service/
-    postgres-init/          # Schema SQL (auth_db, flags_db, targeting_db) - reaproveitado por dev e produção
+  argocd/                   # Uma Application, somente no EKS
+    application.yaml
+    values.yaml             # Lido pelo Terraform
+    README.md
+  base/                     # Deployments, Services, HPAs e scripts SQL
   overlays/
-    development/            # Minikube: infra local (Postgres/Redis/ElasticMQ/DynamoDB local) + segredos fake
-    production/             # EKS: recursos externos da AWS (RDS/ElastiCache/SQS/DynamoDB reais) + imagens do ECR
+    development/            # Minikube: banco, cache e emuladores locais
+    production/             # EKS: RDS, Valkey, SQS e DynamoDB externos
+      sealed-secrets/       # Secrets criptografados (kubeseal)
+      secrets.example.yaml  # Modelo das chaves, nao incluido no Kustomize
 ```
 
-Nenhum arquivo em `base/` tem `namespace` ou segredo fixado — cada overlay decide o
-namespace, as credenciais e, no caso de produção, os endpoints da AWS.
-
-## Ambiente de desenvolvimento (Minikube)
-
-Compare com o fluxo antigo baseado em `kubectl apply -f k8s/development/<serviço>`:
-agora um único comando aplica tudo.
+## Desenvolvimento: Minikube sem Argo CD
 
 ```bash
-# 1. Construir as imagens dentro do Minikube (imagePullPolicy: Never)
-minikube image build -t projeto-postech-fiap-fase-ii-auth-service:latest ./docker/services/auth-service-main
-minikube image build -t projeto-postech-fiap-fase-ii-flag-service:latest ./docker/services/flag-service-main
-minikube image build -t projeto-postech-fiap-fase-ii-targeting-service:latest ./docker/services/targeting-service-main
-minikube image build -t projeto-postech-fiap-fase-ii-evaluation-service:latest ./docker/services/evaluation-service-main
-minikube image build -t projeto-postech-fiap-fase-ii-analytics-service:latest ./docker/services/analytics-service-main
-
-# 2. Aplicar todo o overlay de uma vez
-kubectl apply -k k8s/overlays/development
-
-# 3. Acompanhar
-kubectl get pods -n development
-```
-
-Para inspecionar o YAML final sem aplicar: `kubectl kustomize k8s/overlays/development`.
-
-Os segredos de `overlays/development/secrets/*.yaml` são credenciais fake, iguais às que já
-existiam no repositório (`postgres/postgres`, `redis123`, `admin-secreto-123`, chaves AWS
-`fake`) — servem só para o cluster local e continuam versionadas normalmente.
-
-## Ambiente de produção (EKS)
-
-Em produção, Postgres, Redis, SQS e DynamoDB **não rodam como pods**: são recursos
-gerenciados da AWS (RDS, ElastiCache, SQS e DynamoDB reais). O overlay `production` não
-inclui os StatefulSets/Deployments de infraestrutura local — apenas os 5 serviços da
-aplicação, apontando para esses recursos externos via ConfigMap/Secret.
-
-### Recursos AWS provisionados (conta 180981210379, região us-east-1)
-
-- RDS PostgreSQL: `arn:aws:rds:us-east-1:180981210379:db:togglemaster-db`
-  (`togglemaster-db.cx3w8waoqxrk.us-east-1.rds.amazonaws.com:5432`, usuário `postgres`,
-  senha gerenciada pelo Secrets Manager).
-- ElastiCache Redis: `arn:aws:elasticache:us-east-1:180981210379:replicationgroup:evaluation-cache`
-  (`clustercfg.evaluation-cache.9xskzb.use1.cache.amazonaws.com:6379`, TLS obrigatório,
-  sem AUTH token).
-- Fila SQS: `arn:aws:sqs:us-east-1:180981210379:analytics-queue`.
-- Tabela DynamoDB: `arn:aws:dynamodb:us-east-1:180981210379:table/analytics-db`
-  (partition key `event_id`, tipo String).
-- Repositórios no ECR: `togglemaster/auth-service`, `togglemaster/flag-service`,
-  `togglemaster/targeting-service`, `togglemaster/evaluation-service`,
-  `togglemaster/analytics-service`.
-
-Este lab não provisiona as IAM Roles esperadas para IRSA, então `evaluation-service` e
-`analytics-service` autenticam na AWS via `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/
-`AWS_SESSION_TOKEN` definidos diretamente nos respectivos `Secret`s (veja a seção de
-segredos abaixo) — o SDK usa essas variáveis de ambiente antes de tentar qualquer role.
-Nenhum serviço usa ServiceAccount própria.
-
-### Build e push das imagens (ECR)
-
-```bash
-AWS_ACCOUNT_ID=<sua-conta>
-AWS_REGION=us-east-1
-TAG=$(git rev-parse --short HEAD)   # prefira uma tag imutável a "latest"
-
-aws ecr get-login-password --region "$AWS_REGION" \
-  | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+minikube start
+minikube addons enable ingress
+minikube addons enable metrics-server
 
 for svc in auth-service flag-service targeting-service evaluation-service analytics-service; do
-  docker build -t "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/togglemaster/$svc:$TAG" "./services/${svc}-main"
-  docker push "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/togglemaster/$svc:$TAG"
+  minikube image build -t "projeto-postech-fiap-fase-ii-$svc:latest" \
+    "./toggle-master/microsservices/$svc-main"
 done
+
+kubectl --context minikube apply -k k8s/overlays/development
+kubectl --context minikube -n development get pods,hpa,ingress
 ```
 
-Depois, atualize as referências de imagem do overlay (isso deve rodar na pipeline de
-CI/CD, não manualmente):
+Os Secrets de development tem valores ficticios, usados somente no Minikube.
+O overlay nao depende do Argo CD. Se ele ainda estiver instalado no seu
+cluster local, veja a migracao no [guia do Argo CD](argocd/README.md).
+Nao habilite addons enquanto outro controller gerenciar os mesmos recursos.
+
+## AWS: infraestrutura com Terraform, aplicacao com Argo CD
+
+1. [Terraform](../terraform/README.md) cria a infraestrutura e instala
+   Argo CD, metrics-server, Traefik e Sealed Secrets.
+2. Publique as imagens e gere os SealedSecrets conforme as secoes abaixo.
+3. Registre a [Application](argocd/application.yaml) e faca sync manual,
+   seguindo o [guia do Argo CD](argocd/README.md).
+
+A conta do lab e `042444213801`, em `us-east-1`. Endpoints e credenciais
+devem vir da infraestrutura atual, nao de uma sessao antiga.
+O Argo CD acompanha `feature/argocd`; altere a revisao apos o merge.
+
+### Publicar imagens no ECR
+
+Apos o merge em `main`, os workflows de CI publicam a imagem com a tag
+`sha-<commit>` e atualizam o overlay automaticamente (ver
+[publicacao de tags pelo CI](argocd/README.md#publicacao-de-tags-pelo-ci)).
+O processo manual abaixo serve para o primeiro deploy ou para testar a
+partir de outra branch.
+
+Execute na raiz do repositorio, com Docker disponivel:
 
 ```bash
-cd k8s/overlays/production
-for svc in auth-service flag-service targeting-service evaluation-service analytics-service; do
-  kustomize edit set image "$svc=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/togglemaster/$svc:$TAG"
+export AWS_PROFILE=aws-lab
+export AWS_REGION=us-east-1
+AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+TAG=$(git rev-parse --short HEAD)
+
+(
+  set -euo pipefail
+  aws ecr get-login-password --region "$AWS_REGION" \
+    | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
+
+  for svc in auth-service flag-service targeting-service evaluation-service analytics-service; do
+    IMAGE="$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$svc:$TAG"
+    docker build --platform linux/amd64 -t "$IMAGE" "./toggle-master/microsservices/$svc-main"
+    docker push "$IMAGE"
+  done
+)
+```
+
+Confira que **todos os cinco pushes** terminaram com sucesso antes de seguir.
+O Terraform cria repositorios com nomes simples, como `auth-service`, sem
+`togglemaster/`. As tags sao imutaveis: nao sobrescreva uma tag existente.
+Os nodes padrao sao x86_64, por isso o build especifica `linux/amd64`.
+
+Com a CLI `kustomize` instalada, atualize o overlay:
+
+```bash
+(
+  cd k8s/overlays/production
+  for svc in auth-service flag-service targeting-service evaluation-service analytics-service; do
+    kustomize edit set image "$svc=$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$svc:$TAG" || exit 1
+  done
+)
+```
+
+Alternativamente, edite os cinco `newName`/`newTag` no
+[kustomization.yaml](overlays/production/kustomization.yaml).
+Use apenas tags `sha-...` ou de commit que existem no ECR; o CI nao publica
+`latest`.
+Faca commit e push desse arquivo. O Argo CD le o Git remoto, nao sua maquina.
+
+### Secrets: SealedSecrets versionados no Git
+
+Os seis Secrets ficam em `overlays/production/sealed-secrets/` como
+`SealedSecret`: criptografados com a chave publica do controller instalado
+pelo Terraform (`sealed-secrets-controller`, namespace `kube-system`). So o
+controller deste cluster consegue descriptografa-los; o Argo CD aplica os
+SealedSecrets e o controller cria os Secrets correspondentes.
+
+```text
+Secret (local, fora do Git) --kubeseal--> SealedSecret (Git)
+  --Argo CD--> SealedSecret (cluster) --controller--> Secret (cluster)
+```
+
+O escopo e `strict`: o SealedSecret so abre com o **mesmo nome e namespace**
+(`production`) usados ao criptografar. Renomear ou mudar o namespace exige
+gerar o arquivo de novo.
+
+Instale o cliente: `brew install kubeseal`.
+
+```bash
+export CTX=arn:aws:eks:us-east-1:042444213801:cluster/toggle-master-eks
+SEAL="kubeseal --context $CTX --controller-namespace kube-system --controller-name sealed-secrets-controller --format yaml"
+```
+
+`secrets.example.yaml` documenta as chaves de cada Secret. Para gerar um
+SealedSecret a partir de um Secret preenchido localmente (nunca commitado):
+
+- Use `terraform output` para os endpoints RDS/Valkey, URL SQS e nome DynamoDB.
+- Obtenha a senha RDS no Secrets Manager. `POSTGRES_HOST` recebe so o host.
+- Em `DATABASE_URL`, aplique percent-encoding na senha.
+- Use `rediss://` no Valkey, pois o modulo habilita TLS.
+
+```bash
+$SEAL < /caminho/fora/do/repo/postgres-admin-secret.yaml \
+  > k8s/overlays/production/sealed-secrets/postgres-admin-secret.yaml
+```
+
+Para alterar uma unica chave sem expor as demais, use `--merge-into`.
+Exemplo: renovar as credenciais temporarias do AWS Academy, que expiram:
+
+```bash
+for s in evaluation-service-secret analytics-service-secret; do
+  kubectl create secret generic "$s" -n production --dry-run=client -o json \
+    --from-literal=AWS_ACCESS_KEY_ID="$(aws configure get aws_access_key_id)" \
+    --from-literal=AWS_SECRET_ACCESS_KEY="$(aws configure get aws_secret_access_key)" \
+    --from-literal=AWS_SESSION_TOKEN="$(aws configure get aws_session_token)" \
+    | $SEAL --merge-into "k8s/overlays/production/sealed-secrets/$s.yaml"
 done
+git commit -am "chore(secrets): rotate AWS lab credentials" && git push
 ```
 
-### Segredos de produção
-
-Os manifests em `overlays/production/secrets/*.yaml` são `Secret`s literais com o campo
-`data` já em base64, apontando para os recursos reais acima (RDS, ElastiCache, SQS,
-DynamoDB). Como isso versiona segredos reais no git (aceitável neste laboratório, com
-credenciais temporárias do AWS Academy), **não replique esse padrão em uma conta AWS
-de produção real** — prefira um cofre de segredos (Secrets Manager + External Secrets
-Operator, SOPS, etc.).
-
-`SERVICE_API_KEY` em `evaluation-service-secret.yaml` é um placeholder
-(`REPLACE_AFTER_DEPLOY`): depois que o `auth-service` estiver no ar, gere uma chave real e
-aplique-a:
+Depois do sync, reinicie evaluation-service e analytics-service para que
+carreguem os valores novos:
 
 ```bash
-kubectl exec -n production deploy/auth-service -- \
-  wget -qO- --post-data '{"name":"evaluation-service"}' \
-  --header 'Content-Type: application/json' \
-  --header "Authorization: Bearer $(kubectl get secret auth-service-secret -n production -o jsonpath='{.data.MASTER_KEY}' | base64 -d)" \
-  http://localhost:8001/admin/keys
-
-kubectl patch secret evaluation-service-secret -n production --type merge \
-  -p '{"data":{"SERVICE_API_KEY":"<novo-valor-em-base64>"}}'
-kubectl rollout restart deployment/evaluation-service -n production
+kubectl --context "$CTX" -n production rollout restart \
+  deployment/evaluation-service deployment/analytics-service
 ```
 
-`AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_SESSION_TOKEN` são definidos nos secrets
-de `evaluation-service` e `analytics-service` (credenciais temporárias da sessão AWS
-Academy). O SDK usa essas variáveis de ambiente antes de tentar IRSA/instance role — em
-uma conta de produção real, prefira recriar o IRSA (ServiceAccount + IAM Role) em vez
-deste workaround.
-
-### Schema do PostgreSQL (RDS)
-
-O schema (`auth_db`, `flags_db`, `targeting_db`) é o mesmo em qualquer ambiente e vive em
-[base/postgres-init](base/postgres-init/configmap.yaml). Como o RDS não roda
-`docker-entrypoint-initdb.d`, um Job aplica o mesmo SQL uma única vez:
+Para conferir se o controller abriu os arquivos (condicao `Synced=True`):
 
 ```bash
-kubectl apply -k k8s/overlays/production
-kubectl logs -n production job/postgres-schema-init -f
+kubectl --context "$CTX" -n production get sealedsecrets
+kubectl --context "$CTX" -n production get secrets
 ```
 
-Se precisar rodar de novo (ex: para recriar uma tabela), apague o Job antes:
-`kubectl delete job -n production postgres-schema-init`.
+Cuidados:
 
-### Aplicar
+- A chave privada existe so no cluster. Se o EKS for recriado, os arquivos
+  atuais nao abrem mais: gere-os de novo com o certificado do novo controller.
+- Nao edite manualmente o Secret gerado; altere o SealedSecret no Git.
+- Aplicar um SealedSecret direto no cluster sem commit funciona so ate o
+  proximo sync: o Argo CD volta para a versao do Git.
+- Variaveis de ambiente so sao lidas na inicializacao do pod; apos trocar um
+  Secret, faca `rollout restart` do Deployment.
+- O historico do Git ainda contem os Secrets antigos em base64: rotacione-os.
+
+### Gerar a chave de evaluation-service
+
+Depois do primeiro sync, encaminhe o auth-service em outro terminal:
 
 ```bash
-kubectl apply -k k8s/overlays/production
-kubectl get pods -n production
-kubectl rollout status deployment/evaluation-service -n production
+kubectl --context "$CTX" -n production port-forward svc/auth-service 8001:8001
 ```
 
-## Migração do `k8s/development` antigo
+A `MASTER_KEY` so existe no cluster. Leia-a sem exibir no terminal:
 
-A estrutura plana anterior (`k8s/development/<serviço>/*.yml`, aplicada com múltiplos
-`kubectl apply -f`) foi removida: `k8s/overlays/development` já foi validado ponta a ponta
-(health checks, fluxo de avaliação, cache Redis e pipeline SQS → analytics → DynamoDB) e é
-o substituto direto.
+```bash
+MASTER_KEY=$(kubectl --context "$CTX" -n production get secret auth-service-secret \
+  -o jsonpath='{.data.MASTER_KEY}' | base64 -d)
+API_KEY=$(curl --fail -s -X POST http://localhost:8001/admin/keys \
+  -H "Authorization: Bearer $MASTER_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"evaluation-service"}' | python3 -c 'import json,sys;print(json.load(sys.stdin)["key"])')
+kubectl create secret generic evaluation-service-secret -n production --dry-run=client -o json \
+  --from-literal=SERVICE_API_KEY="$API_KEY" \
+  | $SEAL --merge-into k8s/overlays/production/sealed-secrets/evaluation-service-secret.yaml
+unset MASTER_KEY API_KEY
+```
+
+Faca commit e push, sincronize no Argo CD e reinicie evaluation-service:
+
+```bash
+kubectl --context "$CTX" -n production rollout restart deployment/evaluation-service
+```
+
+### Schema e rotas
+
+O [Job do banco](overlays/production/db-init/job.yaml) e um hook Sync.
+Ele executa os scripts compartilhados de
+[base/postgres-init](base/postgres-init/configmap.yaml) depois dos ConfigMaps
+e antes dos Deployments/HPAs. O SQL pode executar novamente, mas erros
+reais nao sao ignorados.
+
+O [Ingress](overlays/production/ingress.yaml) usa a classe `traefik` e a
+[Middleware](overlays/production/middleware.yaml) StripPrefix. Por exemplo,
+`/auth-service/health` chega ao auth-service como `/health`.
+O HTTP publico e exclusivo para teste; configure TLS antes de uso real.
+
+```bash
+kubectl --context "$CTX" -n production get pods,hpa,ingress
+kubectl --context "$CTX" -n production logs job/postgres-schema-init
+```
+
+## Validacao sem aplicar
+
+```bash
+kubectl kustomize k8s/overlays/development > /dev/null
+kubectl kustomize k8s/overlays/production > /dev/null
+```
+
+O render nao valida disponibilidade de imagens, Secrets ou conectividade AWS.

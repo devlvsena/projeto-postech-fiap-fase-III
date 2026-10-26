@@ -73,15 +73,19 @@ kubectl rollout restart deployment/<nome-do-serviço> -n development
 Em produção, Postgres, Redis, SQS e DynamoDB **não rodam como pods**: o overlay aponta para
 recursos reais da AWS (RDS, ElastiCache, SQS e DynamoDB) via ConfigMap/Secret. Pré-requisitos:
 
-- Cluster EKS já criado, com `kubectl` configurado no contexto correto.
-- RDS PostgreSQL, ElastiCache Redis, fila SQS e tabela DynamoDB já provisionados.
-- Repositórios ECR criados para os 5 serviços.
+- Infra criada pelo Terraform em `terraform/environments/production` (VPC, EKS, RDS,
+  ElastiCache, SQS, DynamoDB, ECR) — o mesmo `apply` instala Argo CD, metrics-server, Traefik e Sealed Secrets.
 - Credenciais AWS válidas (`aws sts get-caller-identity` funcionando) para build/push de
   imagens e, neste laboratório, para autenticação do `evaluation-service`/`analytics-service`
   (veja a nota sobre IRSA abaixo).
 
+O deploy da aplicação é feito pelo **Argo CD** (Application única em
+[k8s/argocd/application.yaml](k8s/argocd/application.yaml)), não por `kubectl apply -k`.
+
 ```bash
-# 1. Build e push das imagens para o ECR (ver k8s/README.md para o script completo)
+# 1. Build e push das imagens para o ECR (repositórios sem prefixo, ex.: auth-service).
+#    Após o merge em main, o CI faz este passo e o 2 automaticamente
+#    (ver k8s/argocd/README.md, "Publicacao de tags pelo CI").
 AWS_ACCOUNT_ID=<sua-conta>
 AWS_REGION=us-east-1
 TAG=$(git rev-parse --short HEAD)
@@ -90,23 +94,26 @@ aws ecr get-login-password --region "$AWS_REGION" \
   | docker login --username AWS --password-stdin "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com"
 
 for svc in auth-service flag-service targeting-service evaluation-service analytics-service; do
-  docker build -t "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/togglemaster/$svc:$TAG" "./services/${svc}-main"
-  docker push "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/togglemaster/$svc:$TAG"
+  docker build --platform linux/amd64 -t "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$svc:$TAG" "./toggle-master/microsservices/${svc}-main"
+  docker push "$AWS_ACCOUNT_ID.dkr.ecr.$AWS_REGION.amazonaws.com/$svc:$TAG"
 done
 
-# 2. Ajustar os endpoints reais da AWS em k8s/overlays/production/secrets/*.yaml
-#    (RDS, ElastiCache, SQS, DynamoDB — ver k8s/README.md)
+# 2. Atualizar newTag para $TAG em k8s/overlays/production/kustomization.yaml, commit e push
 
-# 3. Aplicar o overlay de produção
-kubectl apply -k k8s/overlays/production
+# 3. Secrets versionados como SealedSecrets (criptografados com kubeseal), em
+#    k8s/overlays/production/sealed-secrets/ — ver k8s/README.md
 
-# 4. Acompanhar
+# 4. Registrar a Application (uma vez) e sincronizar pela UI/CLI do Argo CD
+kubectl apply -f k8s/argocd/application.yaml
+
+# 5. Acompanhar
 kubectl get pods -n production
 kubectl rollout status deployment/evaluation-service -n production
 ```
 
 O schema do Postgres (`auth_db`, `flags_db`, `targeting_db`) é aplicado automaticamente pelo
-Job `postgres-schema-init` no primeiro `apply` (o RDS não roda `docker-entrypoint-initdb.d`).
+Job `postgres-schema-init`, executado como hook do Argo CD a cada sync (os scripts são
+idempotentes; o RDS não roda `docker-entrypoint-initdb.d`).
 
 > **Nota sobre credenciais AWS (IRSA):** o padrão correto de produção é usar IRSA
 > (ServiceAccount + IAM Role via OIDC do EKS) para o `evaluation-service` e o
@@ -114,20 +121,9 @@ Job `postgres-schema-init` no primeiro `apply` (o RDS não roda `docker-entrypoi
 > possível criar as IAM Roles necessárias, então as credenciais são fornecidas via
 > `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_SESSION_TOKEN` diretamente nos secrets
 > desses dois serviços (o SDK da AWS prioriza variáveis de ambiente antes de tentar IRSA).
-> Se a sessão da AWS Academy expirar, atualize esses valores e reinicie os deployments:
->
-> ```bash
-> AK=$(aws --profile <seu-profile> configure get aws_access_key_id)
-> SK=$(aws --profile <seu-profile> configure get aws_secret_access_key)
-> ST=$(aws --profile <seu-profile> configure get aws_session_token)
->
-> kubectl patch secret evaluation-service-secret -n production --type merge -p \
->   "{\"data\":{\"AWS_ACCESS_KEY_ID\":\"$(printf '%s' "$AK" | base64)\",\"AWS_SECRET_ACCESS_KEY\":\"$(printf '%s' "$SK" | base64)\",\"AWS_SESSION_TOKEN\":\"$(printf '%s' "$ST" | base64)\"}}"
-> kubectl patch secret analytics-service-secret -n production --type merge -p \
->   "{\"data\":{\"AWS_ACCESS_KEY_ID\":\"$(printf '%s' "$AK" | base64)\",\"AWS_SECRET_ACCESS_KEY\":\"$(printf '%s' "$SK" | base64)\",\"AWS_SESSION_TOKEN\":\"$(printf '%s' "$ST" | base64)\"}}"
->
-> kubectl rollout restart deployment/evaluation-service deployment/analytics-service -n production
-> ```
+> Se a sessão da AWS Academy expirar, gere novamente esses valores nos SealedSecrets com
+> `kubeseal --merge-into`, faça commit/push, sincronize no Argo CD e reinicie os dois
+> deployments (passo a passo em [k8s/README.md](k8s/README.md)).
 >
 > Em uma conta AWS real (fora de lab), prefira recriar o IRSA em vez deste workaround.
 
@@ -158,7 +154,7 @@ k6 run -e BASE_URL="http://localhost:8080" load_test/hpa-load-test.js
 
 ### Contra o EKS (overlay `production`)
 
-Use a URL pública do Load Balancer do `ingress-nginx`:
+Use a URL pública do NLB criado pelo Traefik:
 
 ```bash
 INGRESS_HOST=$(kubectl get ingress microservices -n production -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')

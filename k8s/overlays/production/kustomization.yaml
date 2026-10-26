@@ -8,16 +8,17 @@ resources:
   - ../../base
   - db-init
   - ingress.yaml
-  - secrets/auth-service-secret.yaml
-  - secrets/flag-service-secret.yaml
-  - secrets/targeting-service-secret.yaml
-  - secrets/evaluation-service-secret.yaml
-  - secrets/analytics-service-secret.yaml
-  - secrets/postgres-admin-secret.yaml
+  - middleware.yaml
+  # Secrets criptografados com kubeseal; só o controller do cluster descriptografa.
+  - sealed-secrets/auth-service-secret.yaml
+  - sealed-secrets/flag-service-secret.yaml
+  - sealed-secrets/targeting-service-secret.yaml
+  - sealed-secrets/evaluation-service-secret.yaml
+  - sealed-secrets/analytics-service-secret.yaml
+  - sealed-secrets/postgres-admin-secret.yaml
 
 # APP_ENV=production faz os serviços usarem os SDKs reais da AWS (sem
-# endpoints locais). Credenciais via AWS_ACCESS_KEY_ID/SECRET/SESSION_TOKEN
-# nos secrets (IRSA indisponível neste lab), em vez dos emuladores de development.
+# endpoints locais). Secrets versionados como SealedSecrets (sealed-secrets/).
 configMapGenerator:
   - name: evaluation-service-config
     behavior: merge
@@ -28,32 +29,38 @@ configMapGenerator:
     literals:
       - APP_ENV=production
 
-# Segredos com dados reais (RDS/ElastiCache/SQS/DynamoDB), já em base64
-# (campo "data"), apontando para os recursos reais provisionados na AWS.
-# SERVICE_API_KEY em evaluation-service-secret é um placeholder: gere uma
-# chave via POST /admin/keys no auth-service já implantado e faça
-# "kubectl patch secret evaluation-service-secret" com o valor real.
-
-# Imagens publicadas no ECR, seguindo o padrão togglemaster/<nome-do-serviço>.
-# Preferencialmente, deixe que a pipeline de CI/CD rode "kustomize edit set
-# image" com a tag real (ex: o SHA do commit) antes do deploy, em vez de usar
-# "latest".
+# Tags publicadas e imutaveis no ECR (SHA curto do commit do build).
 images:
   - name: auth-service
-    newName: 180981210379.dkr.ecr.us-east-1.amazonaws.com/togglemaster/auth-service
-    newTag: latest
+    newName: 042444213801.dkr.ecr.us-east-1.amazonaws.com/auth-service
+    newTag: "619d9c1"
   - name: flag-service
-    newName: 180981210379.dkr.ecr.us-east-1.amazonaws.com/togglemaster/flag-service
-    newTag: latest
+    newName: 042444213801.dkr.ecr.us-east-1.amazonaws.com/flag-service
+    newTag: "619d9c1"
   - name: targeting-service
-    newName: 180981210379.dkr.ecr.us-east-1.amazonaws.com/togglemaster/targeting-service
-    newTag: latest
+    newName: 042444213801.dkr.ecr.us-east-1.amazonaws.com/targeting-service
+    newTag: "619d9c1"
   - name: evaluation-service
-    newName: 180981210379.dkr.ecr.us-east-1.amazonaws.com/togglemaster/evaluation-service
-    newTag: latest
+    newName: 042444213801.dkr.ecr.us-east-1.amazonaws.com/evaluation-service
+    newTag: "619d9c1"
   - name: analytics-service
-    newName: 180981210379.dkr.ecr.us-east-1.amazonaws.com/togglemaster/analytics-service
-    newTag: latest
+    newName: 042444213801.dkr.ecr.us-east-1.amazonaws.com/analytics-service
+    newTag: "619d9c1"
+
+patches:
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: add
+        path: /metadata/annotations/argocd.argoproj.io~1sync-wave
+        value: "2"
+  - target:
+      kind: HorizontalPodAutoscaler
+    patch: |-
+      - op: add
+        path: /metadata/annotations
+        value:
+          argocd.argoproj.io/sync-wave: "2"
 
 replicas:
   - name: analytics-service
