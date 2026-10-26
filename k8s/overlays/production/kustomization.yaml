@@ -39,7 +39,7 @@ images:
   newTag: sha-8e36d718d549efeff5313aa6f8733a70074064f7
 - name: evaluation-service
   newName: 042444213801.dkr.ecr.us-east-1.amazonaws.com/evaluation-service
-  newTag: 619d9c1
+  newTag: sha-8e36d718d549efeff5313aa6f8733a70074064f7
 - name: flag-service
   newName: 042444213801.dkr.ecr.us-east-1.amazonaws.com/flag-service
   newTag: 619d9c1
