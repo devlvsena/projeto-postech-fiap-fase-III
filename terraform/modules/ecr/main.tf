@@ -12,6 +12,8 @@ resource "aws_ecr_repository" "this" {
     encryption_type = "AES256"
   }
 
+  force_delete = true
+
   tags = merge(var.tags, { Service = each.key })
 }
 
