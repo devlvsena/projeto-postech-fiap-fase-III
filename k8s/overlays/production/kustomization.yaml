@@ -42,7 +42,7 @@ images:
   newTag: sha-8e36d718d549efeff5313aa6f8733a70074064f7
 - name: flag-service
   newName: 042444213801.dkr.ecr.us-east-1.amazonaws.com/flag-service
-  newTag: 619d9c1
+  newTag: sha-7b0975cdd2a634612b0deb507d03f407a2561684
 - name: targeting-service
   newName: 042444213801.dkr.ecr.us-east-1.amazonaws.com/targeting-service
   newTag: 619d9c1
