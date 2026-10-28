@@ -12,3 +12,11 @@ ecr_repositories = [
   "targeting-service"
 ]
 
+## -- Argo CD configuration (versão do CHART argo-cd, não do app)
+argocd_chart_version         = "10.10.5"
+metrics_server_chart_version = "3.14.0"
+traefik_chart_version        = "42.1.3"
+sealed_secrets_chart_version = "2.20.0"
+
+## -- EKS configuration (AWS Academy não permite criar roles IAM)
+eks_role_arn = "arn:aws:iam::042444213801:role/LabRole"

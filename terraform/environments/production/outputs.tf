@@ -80,3 +80,8 @@ output "eks_cluster_name" {
 output "eks_cluster_endpoint" {
   value = module.eks.cluster_endpoint
 }
+
+# ---- ArgoCD outputs
+output "argocd_server" {
+  value = helm_release.argocd.status
+}

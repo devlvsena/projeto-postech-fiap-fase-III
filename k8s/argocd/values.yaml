@@ -1,0 +1,22 @@
+global:
+  domain: argocd.togglemaster.local
+
+server:
+  replicas: 2
+  service:
+    type: ClusterIP
+  ingress:
+    enabled: false
+
+repoServer:
+  replicas: 2
+
+applicationSet:
+  replicas: 2
+
+redis-ha:
+  enabled: false
+
+configs:
+  params:
+    server.insecure: false

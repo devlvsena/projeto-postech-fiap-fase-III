@@ -1,0 +1,64 @@
+name: Update production GitOps manifests
+
+on:
+  workflow_call:
+    inputs:
+      ecr-registry:
+        required: true
+        type: string
+      image-tag:
+        required: true
+        type: string
+      service:
+        required: true
+        type: string
+      source-sha:
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  update-gitops:
+    name: Update and validate production manifests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Setup Kustomize
+        uses: imranismail/setup-kustomize@v2
+        with:
+          kustomize-version: "5.8.1"
+
+      - name: Test GitOps updates in isolated repositories
+        run: python3 .github/scripts/tests/test_update_gitops.py -v
+
+      - name: Update, validate, commit and push
+        id: update
+        env:
+          ECR_REGISTRY: ${{ inputs.ecr-registry }}
+          IMAGE_TAG: ${{ inputs.image-tag }}
+          SERVICE: ${{ inputs.service }}
+          SOURCE_SHA: ${{ inputs.source-sha }}
+        run: bash .github/scripts/update-gitops.sh
+
+      - name: GitOps summary
+        if: always()
+        env:
+          RESULT: ${{ job.status }}
+          IMAGE: ${{ inputs.ecr-registry }}/${{ inputs.service }}:${{ inputs.image-tag }}
+          MANIFEST_COMMIT: ${{ steps.update.outputs.manifest-commit }}
+        run: |
+          {
+            echo "## Production GitOps"
+            echo "- Result: $RESULT"
+            echo "- Image: \`$IMAGE\`"
+            echo "- Target branch: \`main\`"
+            echo "- Manifest commit: \`$MANIFEST_COMMIT\`"
+            echo "- Manifests are validated before pushing; this workflow does not sync Argo CD."
+          } >> "$GITHUB_STEP_SUMMARY"

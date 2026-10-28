@@ -33,3 +33,14 @@ variable "max_size" {
   type    = number
   default = 3
 }
+variable "cluster_role_arn" {
+  description = "ARN de uma role IAM existente para o plano de controle. null = o módulo cria a role"
+  type        = string
+  default     = null
+}
+
+variable "node_role_arn" {
+  description = "ARN de uma role IAM existente para os nós. null = o módulo cria a role"
+  type        = string
+  default     = null
+}
