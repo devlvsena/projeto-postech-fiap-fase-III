@@ -18,6 +18,7 @@ on:
 
 env:
   AWS_REGION: us-east-1
+  BUCKET: ${{ secrets.BUCKET }}
   TF_VERSION: 1.10.0
   WORKING_DIR: terraform/environments/production
 
@@ -44,7 +45,6 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
       - name: ☁️ Garantir bucket de artifacts
         run: |
-          BUCKET="toggle-master-tfstate-dev"
           REGION="us-east-1"
 
           if aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
