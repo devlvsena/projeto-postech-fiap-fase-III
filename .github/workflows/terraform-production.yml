@@ -47,12 +47,6 @@ jobs:
         run: |
           REGION="us-east-1"
 
-          if aws s3api head-bucket --bucket "$BUCKET" 2>/dev/null; then
-            echo "Bucket $BUCKET já existe, nada a fazer."
-          else
-            echo "Criando bucket $BUCKET..."
-            aws s3api create-bucket --bucket "$BUCKET" --region "$REGION"
-          fi
       - name: 🎯 Format Check
         working-directory: ${{ env.WORKING_DIR }}
         run: terraform fmt -check -recursive
