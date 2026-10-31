@@ -115,6 +115,40 @@ jobs:
       - name: 📥 Checkout
         uses: actions/checkout@v4
 
+      - name: 🔧 Setup Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 🏷️ Metadata (tags e labels)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.ecr-login.outputs.registry || 'local' }}/${{ env.AWS_ECR_REPOSITORY }}
+          tags: |
+            type=sha,format=long
+
+      - name: 🏗️ Build
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.BUILD_CONTEXT }}
+          push: false
+          load: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: 🛑 Container Scan - Trivy (bloqueia em CRITICAL)
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ steps.meta.outputs.tags }}
+          scanners: vuln
+          severity: CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: "1"
+
       - name: 🔑 Configurar credenciais AWS (lab)
         if: github.event_name != 'pull_request'
         uses: aws-actions/configure-aws-credentials@v4
@@ -129,27 +163,11 @@ jobs:
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: 🔧 Setup Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: 🏷️ Metadata (tags e labels)
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ steps.ecr-login.outputs.registry || 'local' }}/${{ env.AWS_ECR_REPOSITORY }}
-          tags: |
-            type=sha,format=long
-
-      - name: 🏗️ Build and Push
-        id: build
-        uses: docker/build-push-action@v6
-        with:
-          context: ${{ env.BUILD_CONTEXT }}
-          push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: 🏗️ Push
+        id: push
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          docker push --all-tags "${{ steps.ecr-login.outputs.registry }}/${{ env.AWS_ECR_REPOSITORY }}"
 
   update-gitops:
     name: Update GitOps
