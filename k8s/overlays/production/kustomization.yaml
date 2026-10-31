@@ -33,7 +33,7 @@ configMapGenerator:
 images:
 - name: analytics-service
   newName: 761063914245.dkr.ecr.us-east-1.amazonaws.com/analytics-service
-  newTag: sha-994304473b165a91e1b6caf1549c26228aa81a82
+  newTag: sha-29bc355a6d4a6f65092640546b3fe7406c40c512
 - name: auth-service
   newName: 761063914245.dkr.ecr.us-east-1.amazonaws.com/auth-service
   newTag: sha-994304473b165a91e1b6caf1549c26228aa81a82
