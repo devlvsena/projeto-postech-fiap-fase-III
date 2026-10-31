@@ -2,7 +2,7 @@ module "ecr" {
   source = "../../modules/ecr"
 
   repository_names     = var.ecr_repositories
-  image_tag_mutability = "IMMUTABLE"
+  image_tag_mutability = "MUTABLE"
   scan_on_push         = true
   max_image_count      = 10
 
