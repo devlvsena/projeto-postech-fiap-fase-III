@@ -38,8 +38,8 @@ images:
   newName: 761063914245.dkr.ecr.us-east-1.amazonaws.com/auth-service
   newTag: sha-994304473b165a91e1b6caf1549c26228aa81a82
 - name: evaluation-service
-  newName: 042444213801.dkr.ecr.us-east-1.amazonaws.com/evaluation-service
-  newTag: 619d9c1
+  newName: 761063914245.dkr.ecr.us-east-1.amazonaws.com/evaluation-service
+  newTag: sha-994304473b165a91e1b6caf1549c26228aa81a82
 - name: flag-service
   newName: 761063914245.dkr.ecr.us-east-1.amazonaws.com/flag-service
   newTag: sha-71a54f5354595c52606c6ca4d48c321e7409e910
