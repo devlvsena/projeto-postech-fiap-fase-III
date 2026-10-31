@@ -32,8 +32,8 @@ configMapGenerator:
 # Tags publicadas e imutaveis no ECR (SHA curto do commit do build).
 images:
 - name: analytics-service
-  newName: 042444213801.dkr.ecr.us-east-1.amazonaws.com/analytics-service
-  newTag: 619d9c1
+  newName: 761063914245.dkr.ecr.us-east-1.amazonaws.com/analytics-service
+  newTag: sha-994304473b165a91e1b6caf1549c26228aa81a82
 - name: auth-service
   newName: 042444213801.dkr.ecr.us-east-1.amazonaws.com/auth-service
   newTag: 619d9c1
