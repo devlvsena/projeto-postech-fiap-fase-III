@@ -6,8 +6,8 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/gabrielyuto/projeto-postech-fiap-fase-III.git
-    targetRevision: feature/argocd
+    repoURL: https://github.com/devlvsena/projeto-postech-fiap-fase-III.git
+    targetRevision: main
     path: k8s/overlays/production
   destination:
     server: https://kubernetes.default.svc
@@ -18,5 +18,8 @@ spec:
       jsonPointers:
         - /spec/replicas
   syncPolicy:
+    automated:
+      prune: false
+      selfHeal: false
     syncOptions:
       - RespectIgnoreDifferences=true

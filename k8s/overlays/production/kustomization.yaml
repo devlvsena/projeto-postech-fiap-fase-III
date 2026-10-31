@@ -32,20 +32,20 @@ configMapGenerator:
 # Tags publicadas e imutaveis no ECR (SHA curto do commit do build).
 images:
 - name: analytics-service
-  newName: 761063914245.dkr.ecr.us-east-1.amazonaws.com/analytics-service
-  newTag: sha-29bc355a6d4a6f65092640546b3fe7406c40c512
+  newName: 042444213801.dkr.ecr.us-east-1.amazonaws.com/analytics-service
+  newTag: sha-7b0975cdd2a634612b0deb507d03f407a2561684
 - name: auth-service
-  newName: 761063914245.dkr.ecr.us-east-1.amazonaws.com/auth-service
-  newTag: sha-994304473b165a91e1b6caf1549c26228aa81a82
+  newName: 042444213801.dkr.ecr.us-east-1.amazonaws.com/auth-service
+  newTag: sha-7b0975cdd2a634612b0deb507d03f407a2561684
 - name: evaluation-service
-  newName: 761063914245.dkr.ecr.us-east-1.amazonaws.com/evaluation-service
-  newTag: sha-994304473b165a91e1b6caf1549c26228aa81a82
+  newName: 042444213801.dkr.ecr.us-east-1.amazonaws.com/evaluation-service
+  newTag: sha-7b0975cdd2a634612b0deb507d03f407a2561684
 - name: flag-service
-  newName: 761063914245.dkr.ecr.us-east-1.amazonaws.com/flag-service
-  newTag: sha-71a54f5354595c52606c6ca4d48c321e7409e910
+  newName: 042444213801.dkr.ecr.us-east-1.amazonaws.com/flag-service
+  newTag: sha-7b0975cdd2a634612b0deb507d03f407a2561684
 - name: targeting-service
-  newName: 761063914245.dkr.ecr.us-east-1.amazonaws.com/targeting-service
-  newTag: sha-994304473b165a91e1b6caf1549c26228aa81a82
+  newName: 042444213801.dkr.ecr.us-east-1.amazonaws.com/targeting-service
+  newTag: sha-7b0975cdd2a634612b0deb507d03f407a2561684
 
 patches:
 - patch: |-

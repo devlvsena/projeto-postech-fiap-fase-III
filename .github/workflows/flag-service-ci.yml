@@ -39,7 +39,7 @@ jobs:
   # ============================================
   lint:
     name: 🔍 Lint Code
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04 # Python 3.9 x64 is available for this runner.
     defaults:
       run:
         working-directory: toggle-master/microsservices/flag-service-main
@@ -68,7 +68,7 @@ jobs:
   
   security:
     name: 🔒 Security Scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: 📥 Checkout
         uses: actions/checkout@v4
