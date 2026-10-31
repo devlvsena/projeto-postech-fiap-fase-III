@@ -19,4 +19,4 @@ traefik_chart_version        = "42.1.3"
 sealed_secrets_chart_version = "2.20.0"
 
 ## -- EKS configuration (AWS Academy não permite criar roles IAM)
-eks_role_arn = "arn:aws:iam::761063914245:role/LabRole"
+eks_role_arn = "arn:aws:iam::042444213801:role/LabRole"
