@@ -45,7 +45,7 @@ images:
   newTag: sha-eef360c1f0e1984842b304f542ef395a721bef87
 - name: targeting-service
   newName: 042444213801.dkr.ecr.us-east-1.amazonaws.com/targeting-service
-  newTag: sha-7b0975cdd2a634612b0deb507d03f407a2561684
+  newTag: sha-eef360c1f0e1984842b304f542ef395a721bef87
 
 patches:
 - patch: |-
