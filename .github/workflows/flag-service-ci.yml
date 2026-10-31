@@ -134,12 +134,12 @@ jobs:
           tags: |
             type=sha,format=long
 
-      - name: 🏗️ Build
+      - name: 🏗️ Build Local Image
         id: build
         uses: docker/build-push-action@v6
         with:
           context: ${{ env.BUILD_CONTEXT }}
-          push: ${{ github.event_name != 'pull_request' }}
+          push: false
           load: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
@@ -183,9 +183,6 @@ jobs:
           docker tag $LOCAL_TAG $TARGET_TAG
 
           docker push $TARGET_TAG
-
-          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' $TARGET_TAG)
-          echo "digest=$DIGEST" >> $GITHUB_OUTPUT
 
   update-gitops:
     name: Update GitOps
