@@ -173,8 +173,8 @@ jobs:
 
       - name: 🏗️ Push
         id: push
-        if: github.event_name != 'pull_request'
-          run: |
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
           docker push --all-tags "${{ steps.ecr-login.outputs.registry }}/${{ env.AWS_ECR_REPOSITORY }}"
 
   update-gitops:
