@@ -33,6 +33,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+    
 RUN groupadd --system appgroup && useradd --system --no-create-home -g appgroup appuser
 
 COPY --from=builder /opt/venv /opt/venv
