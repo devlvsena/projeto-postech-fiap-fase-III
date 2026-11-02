@@ -15,13 +15,15 @@ RUN go mod download && \
 # =========================================================
 # Etapa 2: Runtime
 # =========================================================
+# FROM alpine:3.21
 FROM alpine:3.20.7
 
 WORKDIR /app
 
-RUN apk update && \
-    apk upgrade --no-cache && \
-    apk add --no-cache ca-certificates && \
+# RUN apk update && \
+#     apk upgrade --no-cache && \
+
+RUN apk add --no-cache ca-certificates && \
     addgroup -g 1000 appuser && \
     adduser -D -u 1000 -G appuser appuser
 
